@@ -4,49 +4,18 @@ import argparse
 import sys
 import time
 
-from . import config, db, game, replay, stats
-
-
-def eval_specs(bot, pairs):
-    specs = []
-    for anchor, diff in config.ANCHORS:
-        for seed in config.EVAL_SEEDS[:pairs]:
-            base = seed * 1000 + diff * 10
-            specs.append((game.GameSpec(bot, anchor, config.CANDIDATE_DIFF,
-                                        diff, seed, base + 1), 1, anchor, diff))
-            specs.append((game.GameSpec(anchor, bot, diff,
-                                        config.CANDIDATE_DIFF, seed, base + 2), 2, anchor, diff))
-    return specs
+from . import config, db, evalapi, game, replay, stats
 
 
 def cmd_eval(args):
-    tagged = eval_specs(args.bot, args.pairs)
-    print(f"éval de {args.bot} : {len(tagged)} parties "
+    n = len(config.ANCHORS) * args.pairs * 2
+    print(f"éval de {args.bot} : {n} parties "
           f"({len(config.ANCHORS)} ancres × {args.pairs} seeds × 2 positions)")
     t0 = time.monotonic()
-    results = game.run_batch([spec for spec, *_ in tagged])
-    wall = time.monotonic() - t0
-
-    by_key = {res["spec"].key(): res for res in results}
-    con = db.connect()
-    for spec, cand_pos, anchor, diff in tagged:
-        res = by_key[spec.key()]
-        r = res["replay"]
-        cand_won = None
-        game_s = turns = None
-        replay_dir = None
-        if r and r["states"] and len(r["states"]) == 2:
-            cand_won = int(r["states"][cand_pos - 1] == "won")
-            game_s, turns, replay_dir = r["game_s"], r["turns"], r["dir"]
-        elif r:
-            turns, replay_dir = r["turns"], r["dir"]
-        db.insert_match(con, candidate=args.bot, opponent=anchor,
-                        opp_diff=diff, cand_pos=cand_pos, spec=spec,
-                        cand_won=cand_won, timed_out=res["timed_out"],
-                        game_s=game_s, turns=turns, wall_s=res["wall_s"],
-                        replay_dir=replay_dir)
-    print(f"batch terminé en {wall:.0f}s")
-    report(con, args.bot)
+    metrics = evalapi.evaluate_bot(args.bot, pairs=args.pairs)
+    print(f"batch terminé en {time.monotonic() - t0:.0f}s | "
+          f"combined_score {metrics['combined_score']:.3f}")
+    report(db.connect(), args.bot)
 
 
 def report(con, bot):

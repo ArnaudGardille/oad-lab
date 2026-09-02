@@ -1,0 +1,89 @@
+# Configuration OpenEvolve pour l'évolution du config.js de candidate.
+#
+# Budget d'une itération : génération LLM (~1-2 min) + stage 1 (6
+# parties ~1 min) + stage 2 si franchi (24 parties ~2-4 min), soit
+# ~100 itérations par nuit de 8 h.
+
+max_iterations: 100
+checkpoint_interval: 5
+log_level: "INFO"
+random_seed: 42
+language: "javascript"
+file_suffix: ".js"
+
+# config.js fait ~11,4 Ko ; laisser de la marge sans autoriser
+# l'obésité (le fichier entier passe dans le prompt).
+max_code_length: 24000
+diff_based_evolution: true
+
+llm:
+  provider: "claude_code"
+  models:
+    - name: "sonnet"
+      weight: 1.0
+      timeout: 600
+      # DOIT être par-modèle : la clé ne fait pas partie du
+      # shared_config propagé par LLMConfig.__post_init__, et un None
+      # devient un `--max-budget-usd None` qui fait échouer chaque
+      # appel du CLI (revue 2026-09-02).
+      max_budget_usd: 2.0
+      # 1 seul retry : avec parallel_evaluations=1, un appel qui
+      # s'éternise (4 × 630 s au pire par défaut) dépasserait le
+      # timeout du worker unique et bloquerait la file sans bruit.
+      retries: 1
+  temperature: 0.8
+
+prompt:
+  system_message: |
+    You are evolving `config.js` of a Petra-derived AI bot for the RTS
+    game 0 A.D. (version 0.28). This file defines the bot's strategy
+    parameters and is loaded as an ES module by the game engine's
+    SpiderMonkey runtime.
+
+    Hard constraints — breaking any of these makes the bot lose every
+    game (score 0):
+    - Keep the two `import` lines and the `export function Config(...)`
+      signature exactly as they are (the import paths must stay
+      `simulation/ai/common-api/utils.js` and
+      `simulation/ai/candidate/difficultyLevel.js`).
+    - The Config prototype methods at the end of the file must keep
+      their names and signatures.
+    - Valid SpiderMonkey/ES2020 JavaScript only. No Node APIs, no
+      network, no filesystem.
+
+    What you can change: every strategy parameter (economy targets,
+    military timings, phase advancement, tower/fortress cadence, attack
+    plan sizes, priorities...), and you may add new derived parameters
+    or restructure values, as long as existing keys consumed elsewhere
+    keep existing (other Petra modules read Config fields — removing a
+    field crashes the bot, which scores 0).
+
+    The bot is evaluated by playing full games against the stock Petra
+    AI at easy, medium and hard difficulty, both positions, on mainland
+    128 with identical civilizations. Metrics: wr_easy, wr_medium,
+    wr_hard, combined_score (mean of the three), no_result counts
+    stalled/crashed games as losses, mean_game_min is the mean length
+    of decisive games. The baseline (unmodified file) scores about
+    0.54 (0.88/0.50/0.25). Beat it by making the strategy stronger and
+    faster — e.g. tighter early economy, better timed aggression,
+    smarter phase timings — not by stalling games.
+
+database:
+  population_size: 60
+  archive_size: 25
+  num_islands: 3
+  elite_selection_ratio: 0.15
+  exploration_ratio: 0.25
+  exploitation_ratio: 0.6
+  migration_interval: 20
+  migration_rate: 0.1
+
+evaluator:
+  timeout: 1800
+  max_retries: 1
+  cascade_evaluation: true
+  # stage 1 (6 parties) doit dépasser ce combined_score pour accéder
+  # au stage 2 ; le baseline stage-1 tourne autour de 0.5.
+  cascade_thresholds: [0.34]
+  parallel_evaluations: 1
+  enable_artifacts: true

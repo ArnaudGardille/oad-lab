@@ -104,17 +104,45 @@ partie-à-partie, pas de variance reduction par common random numbers.
 **Sortie** : évaluer un bot donne winrates ± IC et un rating, sans
 intervention, en un temps connu (~24 parties ≈ 4-6 min).
 
-## Phase 4 — Boucle autoresearch linéaire
+## Phase 4 — Boucle d'évolution (OpenEvolve) — EN COURS (2026-09-02)
 
-- [ ] Cascade d'évaluation : (a) le bot se charge et survit 2 min,
-      (b) 3 parties courtes vs Petra easy, (c) éval complète phase 3
-- [ ] Agent (claude -p / Agent SDK) : édite le bot candidat, lance la
-      cascade, commit git si amélioration, note d'expérience par essai
-- [ ] Première nuit de run — détachée de la session (setsid/nohup),
-      logs persistants
+Décision d'outillage appliquée : OpenEvolve 0.3.2 (pip, venv `.venv`)
+avec backend natif `claude_code` (`claude -p`, auth par session OAuth,
+modèle sonnet). La cible d'évolution est le `config.js` du bot
+`candidate` (régénéré depuis forkbot par `scripts/make_candidate.py`,
+dossier gitignoré — état généré).
 
-**Sortie** : la boucle tourne 8 h sans intervention et produit un log
-d'expériences exploitable au matin.
+- [x] `harness/oadlab/evalapi.py` : évaluation programmatique — rend
+      les métriques du batch courant (combined_score = moyenne des
+      winrates par ancre ; sans-résultat = défaite, non gameable),
+      matchs tracés en base sous un tag par version
+- [x] `evolution/evaluator.py` : contrat OpenEvolve en cascade —
+      stage 1 = 6 parties (~1 min, seuil 0.34), stage 2 = 24 parties ;
+      `parallel_evaluations: 1` (le parallélisme est au niveau parties)
+- [x] `evolution/config.yaml` : prompt système avec les contraintes
+      dures (imports/exports intouchables, champs Config consommés
+      ailleurs), 3 îlots, population 60, diff-based
+- [x] `evolution/run_night.sh` : lancement détaché (setsid+nohup+
+      disown), refus si un run tourne déjà, logs horodatés sous
+      `runs/evolution/`
+- [x] Smoke test : la chaîne harnais→OpenEvolve est validée (programme
+      initial évalué sur 24 parties, métriques remontées, checkpoint et
+      best sauvegardés). Les générations LLM échouaient pour deux
+      raisons, toutes deux réglées ou identifiées :
+      1. `max_budget_usd` non propagé aux modèles → `--max-budget-usd
+         None` → échec de chaque appel CLI (corrigé : clé par-modèle) ;
+      2. le CLI `claude` n'est pas authentifié en détaché sur cette
+         machine (la session Desktop s'authentifie via l'app hôte,
+         tokens CLI vides) → **`claude login` requis une fois, action
+         utilisateur**, avant toute nuit de run.
+- [x] Revue agent : 6 constats, tous appliqués (budget par-modèle,
+      retries=1 contre le blocage du worker unique, gitignore,
+      winrates groupés par (ancre, difficulté), garde sys.path)
+- [ ] Première nuit de run (~100 itérations) — prête, bloquée sur
+      `claude login`
+
+**Sortie** : la boucle tourne 8 h sans intervention et produit un
+checkpoint exploitable au matin (meilleur programme + base de matchs).
 
 ## Phase 5 — Archive qualité-diversité
 
