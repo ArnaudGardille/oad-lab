@@ -1,0 +1,7 @@
+{
+	"name": "Fork Bot",
+	"description": "Fork de Petra (oad-lab), point de depart de l autoresearch.",
+	"constructor": "PetraBot",
+	"filename": "_petrabot.js",
+	"useShared": true
+}

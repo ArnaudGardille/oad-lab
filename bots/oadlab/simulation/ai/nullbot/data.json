@@ -1,0 +1,7 @@
+{
+	"name": "Null Bot",
+	"description": "Bot de validation oad-lab : ne fait strictement rien.",
+	"constructor": "NullBot",
+	"filename": "nullbot.js",
+	"useShared": true
+}

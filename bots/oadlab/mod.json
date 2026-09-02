@@ -1,0 +1,8 @@
+{
+	"name": "oadlab",
+	"version": "0.1.0",
+	"label": "oad-lab bots",
+	"url": "",
+	"description": "Bots expérimentaux oad-lab : nullbot (ne fait rien) et forkbot (fork de Petra, point de départ de l'autoresearch).",
+	"dependencies": ["0ad"]
+}
