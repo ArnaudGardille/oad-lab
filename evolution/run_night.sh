@@ -22,6 +22,11 @@ fi
 
 python3 scripts/make_candidate.py
 
+# Consomme les intentions de pilotage (SPEC.md §4.3) : écrit la config
+# effective (ordres opérateur dans le system_message) et la graine
+# (verbe branch) dans $OUT.
+.venv/bin/python evolution/apply_intents.py "$OUT"
+
 # Manifeste de provenance (SPEC.md P2) : qui a produit ce run, depuis
 # quel état du repo, avec quelle config et quel pool.
 DIRTY=0
@@ -33,7 +38,7 @@ cat > "$OUT/run.json" <<EOF
  "started": $(date +%s),
  "git_commit": "$(git rev-parse --short HEAD)",
  "dirty": $DIRTY,
- "config_sha": "$(sha1sum evolution/config.yaml | cut -c1-12)",
+ "config_sha": "$(sha1sum "$OUT/config.yaml" | cut -c1-12)",
  "hof": $HOF,
  "iterations": $ITER
 }
@@ -49,14 +54,23 @@ export REAL_CLAUDE
 export PATH="$PWD/evolution/bin:$PATH"
 
 setsid nohup .venv/bin/openevolve-run \
-    evolution/initial_config.js \
+    "$OUT/initial.js" \
     evolution/evaluator.py \
-    --config evolution/config.yaml \
+    --config "$OUT/config.yaml" \
     --iterations "$ITER" \
     --output "$OUT" \
     >"$OUT/night.log" 2>&1 &
 
 PID=$!
 disown
+# Un job backgroundé échappe à set -e : vérifier qu'il survit au
+# démarrage, sinon les intentions ont été consommées par un run mort
+# (échec bruyant plutôt que silencieux — les re-soumettre via le front).
+sleep 3
+if ! kill -0 "$PID" 2>/dev/null; then
+    echo "openevolve-run est mort au lancement — voir $OUT/night.log ;" >&2
+    echo "les intentions consommées par ce run sont à re-soumettre." >&2
+    exit 1
+fi
 echo "run lancé : $ITER itérations, pid $PID (pgid $(ps -o pgid= -p $PID | tr -d ' '))"
 echo "log : $OUT/night.log"

@@ -243,7 +243,9 @@ async function selectProgram(id) {
     </table>
     <div class="verbs">
       <button id="verb-pin">📌 épingler</button>
-      <button id="verb-explore" ${cellOf(p) ? "" : "disabled"}>🧭 explore cette zone</button>
+      <button id="verb-cut">✂ couper</button>
+      <button id="verb-branch">🌱 brancher</button>
+      <button id="verb-explore" ${cellOf(p) ? "" : "disabled"}>🧭 explorer ici</button>
     </div>`;
   html += `<h2>Matchs</h2><ul class="matches" id="match-list">
     <li class="dim">chargement…</li></ul>
@@ -256,6 +258,9 @@ async function selectProgram(id) {
       p.parent_code, p.code)}</pre>`;
   d.innerHTML = html;
   $("verb-pin").addEventListener("click", () => sendIntent("pin", p.id));
+  $("verb-cut").addEventListener("click", () => sendIntent("cut", p.id));
+  $("verb-branch").addEventListener("click", () =>
+    sendIntent("branch", p.id, true));
   const ex = $("verb-explore");
   if (ex && !ex.disabled)
     ex.addEventListener("click", () => sendIntent("explore", cellOf(p)));
@@ -327,14 +332,37 @@ function sparkline(time, vals) {
   </svg>`;
 }
 
-async function sendIntent(verb, target) {
-  const note = verb === "pin" ? null :
-    prompt("Note d'intention (optionnelle) :") || null;
+async function sendIntent(verb, target, askNote = false) {
+  const note = verb === "pin" || verb === "cut" ? null :
+    prompt(askNote ? "Intention de la branche (devient une directive) :"
+                   : "Note d'intention (optionnelle) :") || null;
+  if (askNote && !note) {
+    alert("Branche annulée : une intention est requise.");
+    return;
+  }
   await fetch("/api/intents", {
     method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({verb, target, note}),
   });
+  renderIntents();
   alert(`Intention « ${verb} » enregistrée (consommée au prochain run).`);
+}
+
+/* ---------- intentions en attente ---------- */
+
+const VERB_ICON = {pin: "📌", cut: "✂", branch: "🌱", explore: "🧭"};
+
+async function renderIntents() {
+  let intents;
+  try { intents = await jget("/api/intents"); } catch { return; }
+  const ul = $("intents");
+  const pending = intents.filter((i) => i.status === "pending");
+  ul.innerHTML = pending.length ? pending.map((i) =>
+    `<li><b>${VERB_ICON[i.verb] || ""} ${esc(i.verb)}</b>
+     ${esc((i.target || "").slice(0, 12))}
+     ${i.note ? `<span class="dim">« ${esc(i.note)} »</span>` : ""}</li>`
+  ).join("") : `<li class="dim">aucune — les verbes de la fiche en
+    créent ; consommées au prochain run</li>`;
 }
 
 /* diff ligne à ligne (LCS) — suffisant pour un config de ~300 lignes */
@@ -423,6 +451,7 @@ async function refresh() {
       state.run)}&since=${state.lastEventTs}`);
     if (events.length) state.lastEventTs = events[events.length - 1].ts;
     renderEvents(events);
+    renderIntents();
     render();
   } catch (e) {
     console.error(e);

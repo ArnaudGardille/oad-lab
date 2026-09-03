@@ -254,9 +254,20 @@ interface ne produit que des logs.
       machine (mail, banque...) alors que le contexte contient du
       texte écrit par le LLM générateur → `--strict-mcp-config`
       ajouté au chat ET au wrapper du générateur.**
-- [ ] Verbes consommés par la boucle comme priors de sélection
-      (SPEC.md §4.3) ; nœuds fantômes ; digest du matin ;
-      étiquetage LLM des clusters comportementaux (nommer les styles)
+- [x] Verbes consommés par la boucle (SPEC.md §4.3) :
+      `evolution/apply_intents.py`, appelé par run_night.sh — les
+      intentions en attente deviennent des ordres opérateur dans le
+      system_message (pin = exemplaire, cut = impasse déclarée,
+      explore = zone comportementale cible) et `branch` fait démarrer
+      le run DEPUIS le nœud choisi (graine = son code, l'intention
+      devient directive). Config effective et graine écrites dans le
+      dossier du run (provenance), intentions marquées consommées avec
+      l'id du run ; garde de survie au lancement (un run mort au
+      démarrage = échec bruyant, pas d'intentions perdues en silence).
+      Front : ✂ couper et 🌱 brancher ajoutés, liste « intentions en
+      attente » dans le panneau gauche.
+- [ ] Nœuds fantômes ; digest du matin ; étiquetage LLM des clusters
+      comportementaux (nommer les styles)
 - [ ] Vue DAG des lignées + carte comportementale (d3/cytoscape)
 - [ ] Verbes : épingler, couper, brancher-avec-intention, drapeau
       « explore ici » → traduits en priors de sélection
