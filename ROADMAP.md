@@ -104,7 +104,7 @@ partie-à-partie, pas de variance reduction par common random numbers.
 **Sortie** : évaluer un bot donne winrates ± IC et un rating, sans
 intervention, en un temps connu (~24 parties ≈ 4-6 min).
 
-## Phase 4 — Boucle d'évolution (OpenEvolve) — EN COURS (2026-09-02)
+## Phase 4 — Boucle d'évolution (OpenEvolve) — FAIT (2026-09-03)
 
 Décision d'outillage appliquée : OpenEvolve 0.3.2 (pip, venv `.venv`)
 avec backend natif `claude_code` (`claude -p`, auth par session OAuth,
@@ -138,11 +138,23 @@ dossier gitignoré — état généré).
 - [x] Revue agent : 6 constats, tous appliqués (budget par-modèle,
       retries=1 contre le blocage du worker unique, gitignore,
       winrates groupés par (ancre, difficulté), garde sys.path)
-- [ ] Première nuit de run (~100 itérations) — prête, bloquée sur
-      `claude login`
+- [x] Première nuit de run : 100 itérations en ~6 h 45 (19:48 → 02:35),
+      sans intervention, 20 checkpoints, 8/100 itérations perdues sur
+      « No valid diffs » (formatage LLM, acceptable). **Meilleur
+      programme : combined_score 0,75 vs 0,417 au départ** (100% vs
+      facile, 62,5% vs moyen, 62,5% vs dur — contre 12,5% au départ),
+      ordinal openskill 20,6. Trouvé dès l'itération 9 puis plateau :
+      la population sature à 0,58-0,75, et 18/24 victoires est proche
+      du plafond de résolution d'une éval à 24 parties. Le gagnant
+      lâche la course éco contre Petra dur et le pressure tôt
+      (casernes à 16 pop, cadence tours/forteresses ×0,92). Run :
+      `runs/evolution/2026-09-02_1948/`.
 
 **Sortie** : la boucle tourne 8 h sans intervention et produit un
 checkpoint exploitable au matin (meilleur programme + base de matchs).
+Enseignement pour la phase 5 : le plateau vient du manque de diversité
+ET de la résolution de l'éval — les descripteurs comportementaux et le
+hall of fame sont la suite logique, pas un luxe.
 
 ## Phase 5 — Archive qualité-diversité
 
