@@ -22,6 +22,15 @@ fi
 
 python3 scripts/make_candidate.py
 
+# Désarme le CLI côté génération : le LLM produit des diffs, il n'agit
+# pas. Sans ce wrapper (evolution/bin/claude), l'agent de génération a
+# réellement édité forkbot/config.js et initial_config.js pendant la
+# nuit du 2026-09-02 — il aurait pu éditer l'évaluateur et truquer son
+# score. REAL_CLAUDE est résolu AVANT de préfixer le PATH (récursion).
+REAL_CLAUDE="$(command -v claude)"
+export REAL_CLAUDE
+export PATH="$PWD/evolution/bin:$PATH"
+
 setsid nohup .venv/bin/openevolve-run \
     evolution/initial_config.js \
     evolution/evaluator.py \

@@ -156,14 +156,52 @@ Enseignement pour la phase 5 : le plateau vient du manque de diversité
 ET de la résolution de l'éval — les descripteurs comportementaux et le
 hall of fame sont la suite logique, pas un luxe.
 
-## Phase 5 — Archive qualité-diversité
+## Phase 5 — Archive qualité-diversité — EN COURS (2026-09-03)
 
-- [ ] Descripteurs comportementaux extraits des replays (timing
-      d'agression, ratio éco/militaire, harcèlement, timing de phase...)
-- [ ] DAG des lignées en base (parent, diff, descripteurs, Elo, notes)
-- [ ] Sélection de branche : potentiel + originalité (nouveauté mesurée
-      sur le comportement, pas sur le code)
-- [ ] Hall of fame divers comme pool d'évaluation (+ ancres Petra)
+Découverte structurante : en partie 100 % IA, commands.txt ne contient
+AUCUNE commande (les IA postent leurs ordres directement dans la
+simulation). Les descripteurs viennent des séries temporelles du
+StatisticsTracker dans metadata.json (un échantillon/30 s de jeu :
+unités par classe, valeurs tuées/perdues, ressources, pop, % carte).
+
+- [x] Descripteurs comportementaux (`harness/oadlab/descriptors.py`),
+      tous dans [0,1] : `aggression` (précocité du premier sang
+      infligé), `boom` (pop à 10 min), `military` (part combattante de
+      la production), `map_control` (emprise max). Stockés par match en
+      base, moyennés par batch dans les métriques d'évaluation.
+- [x] DAG des lignées en base : table `programs` (parent, itération,
+      métriques, descripteurs, résumé LLM du diff, code), importée des
+      checkpoints OpenEvolve par `scripts/export_lineage.py`
+      (idempotent). Nuit 1 importée : 60 programmes, 59 avec parent.
+- [x] Sélection potentiel + originalité : MAP-Elites d'OpenEvolve
+      branché sur le comportement — `feature_dimensions:
+      [aggression, boom]` (grille 8×8), la fitness reste
+      combined_score. La nouveauté est mesurée sur le comportement,
+      pas sur le code.
+- [x] Hall of fame divers (`scripts/make_hof.py`) : N élites à cellule
+      comportementale distincte, matérialisées en bots `hofK` +
+      manifeste `runs/hof.json` que le harnais ajoute au pool d'éval.
+      Piège trouvé au premier essai : les migrations inter-îlots
+      d'OpenEvolve copient un programme sous un nouvel id → hof1 ==
+      hof2, parties rejouées À L'IDENTIQUE (même seed/aiseed + bots
+      identiques : la reproduction exacte existe donc bel et bien) ;
+      déduplication par code ajoutée. Validation 12 parties avec pool
+      Petra+HOF : 0 échec, wr_hof remonté, descripteurs en base.
+- [x] **Fuite de sandbox colmatée** : le provider `claude_code`
+      d'OpenEvolve lance `claude -p` sans restriction d'outils, depuis
+      le repo — pendant la nuit 1, le LLM générateur a réellement
+      ÉDITÉ `forkbot/config.js` et `evolution/initial_config.js`
+      (mtimes 21:27 et 23:58, commentaires citant ses propres
+      métriques). Il aurait pu éditer l'évaluateur et truquer son
+      score. Fichiers restaurés depuis git ; `evolution/bin/claude`
+      (wrapper `--disallowedTools Bash,Edit,Write,...`) désormais
+      préfixé au PATH par run_night.sh — testé : le CLI répond CANNOT
+      à une demande d'écriture. La nuit 1 reste valide : l'évaluateur
+      et le harnais n'ont pas été touchés (git status), seuls
+      l'étalon et le programme initial étaient contaminés APRÈS coup.
+- [ ] Nuit de validation : vérifier que la carte comportementale se
+      remplit (occupation de la grille 8×8) et que les scores avec
+      pool HOF restent sains.
 
 **Sortie** : la carte comportementale se remplit ; les runs ne
 convergent plus vers un style unique.

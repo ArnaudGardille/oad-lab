@@ -58,20 +58,40 @@ prompt:
     keep existing (other Petra modules read Config fields — removing a
     field crashes the bot, which scores 0).
 
-    The bot is evaluated by playing full games against the stock Petra
-    AI at easy, medium and hard difficulty, both positions, on mainland
-    128 with identical civilizations. Metrics: wr_easy, wr_medium,
-    wr_hard, combined_score (mean of the three), no_result counts
-    stalled/crashed games as losses, mean_game_min is the mean length
-    of decisive games. The baseline (unmodified file) scores about
-    0.54 (0.88/0.50/0.25). Beat it by making the strategy stronger and
-    faster — e.g. tighter early economy, better timed aggression,
-    smarter phase timings — not by stalling games.
+    The bot is evaluated by playing full games, both positions, on
+    mainland 128 with identical civilizations, against a pool of
+    opponents: the stock Petra AI at easy, medium and hard difficulty,
+    plus possibly hall-of-fame bots (strong earlier versions of this
+    same evolving bot). Metrics: wr_easy, wr_medium, wr_hard (Petra
+    anchors), wr_hof if hall-of-fame opponents are present,
+    combined_score (mean of the per-opponent winrates over the WHOLE
+    pool — its scale shifts when the pool grows, compare only within
+    one run), no_result counts stalled/crashed games as losses,
+    mean_game_min is the mean length of decisive games. Improve the
+    score by making the strategy stronger and faster — e.g. tighter
+    early economy, better timed aggression, smarter phase timings —
+    not by stalling games.
+
+    The population is also mapped on two behavioral dimensions measured
+    from replays: aggression (how early the bot draws first blood) and
+    boom (population reached by minute 10). Distinct playstyles —
+    rushes, turtles, booms, timing attacks — occupy distinct niches and
+    are preserved even at equal score, so exploring a genuinely
+    different strategy is valuable, not just tuning the current one.
 
 database:
   population_size: 60
   archive_size: 25
   num_islands: 3
+  # MAP-Elites sur le COMPORTEMENT, pas sur le code : aggression
+  # (précocité du premier sang infligé) et boom (pop à 10 min), extraits
+  # des replays par le harnais (oadlab.descriptors) et rendus dans les
+  # métriques de l'évaluateur. La fitness reste combined_score ; ces
+  # dimensions ne font que placer le programme dans la grille, pour que
+  # la population couvre des styles au lieu de converger sur un seul
+  # (plateau à 0.75 dès l'itération 9 la nuit du 2026-09-02).
+  feature_dimensions: ["aggression", "boom"]
+  feature_bins: 8
   elite_selection_ratio: 0.15
   exploration_ratio: 0.25
   exploitation_ratio: 0.6

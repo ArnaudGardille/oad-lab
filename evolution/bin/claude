@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Wrapper `claude` installé en tête de PATH par run_night.sh.
+#
+# Le générateur LLM d'OpenEvolve doit PRODUIRE DU TEXTE (des diffs),
+# pas agir : le provider claude_code appelle `claude -p` sans aucune
+# restriction d'outils, depuis le repo. Sans ce wrapper, l'agent de
+# génération a réellement édité forkbot/config.js et initial_config.js
+# pendant la nuit du 2026-09-02 (constaté par mtime + commentaires
+# citant ses propres métriques) — il aurait tout aussi bien pu éditer
+# l'évaluateur et truquer son score.
+#
+# REAL_CLAUDE est exporté par run_night.sh (chemin résolu AVANT de
+# préfixer le PATH, sinon récursion).
+if [ -z "${REAL_CLAUDE:-}" ]; then
+    echo "REAL_CLAUDE non défini — ce wrapper doit être lancé via run_night.sh" >&2
+    exit 1
+fi
+exec "$REAL_CLAUDE" \
+    --disallowedTools "Bash,Edit,Write,NotebookEdit,Task,Agent,WebFetch,WebSearch,TodoWrite,KillShell" \
+    "$@"

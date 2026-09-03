@@ -6,10 +6,13 @@ joue un batch de parties contre les ancres Petra via le harnais, et on
 rend les métriques (combined_score = moyenne des winrates par ancre,
 parties sans résultat comptées comme défaites).
 
+Le pool d'adversaires = ancres Petra + hall of fame si runs/hof.json
+existe (voir scripts/make_hof.py) : 3 ou 6 adversaires.
+
 Cascade :
-- stage 1 : 1 seed par ancre (6 parties, ~1 min) — élimine vite les
-  configs qui cassent le bot (elles perdent tout).
-- stage 2 : évaluation complète (4 seeds, 24 parties, ~2-4 min).
+- stage 1 : 1 seed par adversaire (6-12 parties, ~1-2 min) — élimine
+  vite les configs qui cassent le bot (elles perdent tout).
+- stage 2 : évaluation complète (4 seeds, 24-48 parties, ~2-8 min).
 
 parallel_evaluations DOIT rester à 1 : l'évaluateur écrit dans le même
 dossier candidate/ et le parallélisme est déjà au niveau des parties.

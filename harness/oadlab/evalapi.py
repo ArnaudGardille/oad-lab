@@ -6,21 +6,49 @@ Contrairement au rapport CLI qui agrège tout l'historique d'un bot,
 enregistre les matchs en base sous un tag unique par version évaluée.
 """
 
-from . import config, db, game, stats
+import json
+
+from . import config, db, descriptors, game, stats
 
 
-def eval_specs(bot, pairs):
-    """Les specs d'une évaluation standard : chaque ancre × chaque seed
-    d'éval × les deux positions. L'aiseed encode (seed, difficulté,
-    position) pour garantir l'unicité des clés d'attribution."""
+def opponents():
+    """Le pool d'évaluation : les ancres Petra, plus le hall of fame
+    s'il a été matérialisé (runs/hof.json). Les scores obtenus avec et
+    sans hall of fame ne sont pas comparables entre eux."""
+    pool = list(config.ANCHORS)
+    if config.HOF_MANIFEST.exists():
+        try:
+            hof = json.loads(config.HOF_MANIFEST.read_text())
+        except json.JSONDecodeError:
+            hof = []
+        for entry in hof:
+            bot_dir = config.REPO / "bots/oadlab/simulation/ai" / entry["bot"]
+            if not bot_dir.is_dir():
+                # Un manifeste qui référence un bot absent produirait
+                # des parties toutes perdues sans diagnostic : mieux
+                # vaut échouer tout de suite.
+                raise RuntimeError(
+                    f"hof.json référence {entry['bot']} mais {bot_dir} "
+                    "n'existe pas — relancer scripts/make_hof.py")
+            pool.append((entry["bot"], config.CANDIDATE_DIFF))
+    return pool
+
+
+def eval_specs(bot, pairs, pool=None):
+    """Les specs d'une évaluation standard : chaque adversaire × chaque
+    seed d'éval × les deux positions. L'aiseed encode (seed, difficulté,
+    position) ; les adversaires de même difficulté restent distinguables
+    par les noms d'IA dans la clé d'attribution."""
     tagged = []
-    for anchor, diff in config.ANCHORS:
+    for opponent, diff in pool or opponents():
         for seed in config.EVAL_SEEDS[:pairs]:
             base = seed * 1000 + diff * 10
-            tagged.append((game.GameSpec(bot, anchor, config.CANDIDATE_DIFF,
-                                         diff, seed, base + 1), 1, anchor, diff))
-            tagged.append((game.GameSpec(anchor, bot, diff,
-                                         config.CANDIDATE_DIFF, seed, base + 2), 2, anchor, diff))
+            tagged.append((game.GameSpec(bot, opponent, config.CANDIDATE_DIFF,
+                                         diff, seed, base + 1),
+                           1, opponent, diff))
+            tagged.append((game.GameSpec(opponent, bot, diff,
+                                         config.CANDIDATE_DIFF, seed,
+                                         base + 2), 2, opponent, diff))
     return tagged
 
 
@@ -32,45 +60,59 @@ def evaluate_bot(bot, pairs=4, tag=None, log=print):
     ou fait planter le moteur ne doit jamais être récompensé.
     """
     tag = tag or bot
-    tagged = eval_specs(bot, pairs)
+    pool = opponents()
+    tagged = eval_specs(bot, pairs, pool)
     results = game.run_batch([spec for spec, *_ in tagged], log=log)
     by_key = {res["spec"].key(): res for res in results}
 
     con = db.connect()
     rows = []
-    for spec, cand_pos, anchor, diff in tagged:
+    for spec, cand_pos, opponent, diff in tagged:
         res = by_key[spec.key()]
         r = res["replay"]
         cand_won = None
-        game_s = turns = replay_dir = None
+        game_s = turns = replay_dir = desc = None
         if r:
             turns, replay_dir = r["turns"], r["dir"]
+            desc = descriptors.from_metadata(r["path"] / "metadata.json",
+                                             cand_pos)
             if r["states"] and len(r["states"]) == 2:
                 cand_won = int(r["states"][cand_pos - 1] == "won")
                 game_s = r["game_s"]
-        db.insert_match(con, candidate=tag, opponent=anchor, opp_diff=diff,
+        db.insert_match(con, candidate=tag, opponent=opponent, opp_diff=diff,
                         cand_pos=cand_pos, spec=spec, cand_won=cand_won,
                         timed_out=res["timed_out"], game_s=game_s,
                         turns=turns, wall_s=res["wall_s"],
-                        replay_dir=replay_dir)
-        rows.append({"opponent": anchor, "opp_diff": diff,
+                        replay_dir=replay_dir, descriptors=desc)
+        rows.append({"opponent": opponent, "opp_diff": diff,
                      "cand_won": cand_won, "timed_out": res["timed_out"],
-                     "game_s": game_s, "turns": turns})
+                     "game_s": game_s, "turns": turns, "desc": desc})
     con.close()
 
     metrics = {"games": len(rows),
                "no_result": sum(1 for r in rows if r["cand_won"] is None)}
     winrates = {}
-    for anchor, diff in config.ANCHORS:
+    for opponent, diff in pool:
         sub = [r for r in rows
-               if r["opponent"] == anchor and r["opp_diff"] == diff]
+               if r["opponent"] == opponent and r["opp_diff"] == diff]
         # cand_won None -> 0 (défaite) : conservateur et non gameable
-        winrates[(anchor, diff)] = \
+        winrates[(opponent, diff)] = \
             sum(r["cand_won"] or 0 for r in sub) / len(sub)
     metrics["wr_easy"] = winrates.get(("petra", 2), 0.0)
     metrics["wr_medium"] = winrates.get(("petra", 3), 0.0)
     metrics["wr_hard"] = winrates.get(("petra", 4), 0.0)
+    hof_wr = [wr for (opp, _), wr in winrates.items() if opp != "petra"]
+    if hof_wr:
+        metrics["wr_hof"] = sum(hof_wr) / len(hof_wr)
     metrics["combined_score"] = sum(winrates.values()) / len(winrates)
+
+    # Descripteurs comportementaux moyens du batch — c'est là-dessus
+    # que MAP-Elites (feature_dimensions) place le programme. Sans
+    # aucune partie exploitable, 0.0 partout : le programme est de
+    # toute façon éliminé par son score.
+    for key in db.DESCRIPTOR_COLS:
+        vals = [r["desc"][key] for r in rows if r["desc"]]
+        metrics[key] = sum(vals) / len(vals) if vals else 0.0
 
     sk = stats.openskill_rating(rows)
     if sk:

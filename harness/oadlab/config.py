@@ -27,6 +27,12 @@ EVAL_SEEDS = [101, 102, 103, 104, 105, 106]
 ANCHORS = [("petra", 2), ("petra", 3), ("petra", 4)]
 CANDIDATE_DIFF = 3
 
+# Manifeste du hall of fame (scripts/make_hof.py). S'il existe, les
+# bots listés rejoignent le pool d'évaluation aux côtés des ancres —
+# le combined_score change alors d'échelle, c'est voulu (cible mobile,
+# façon league play).
+HOF_MANIFEST = RUNS / "hof.json"
+
 PARALLEL = 12          # 1 partie par cœur physique (Ryzen 3900X)
 GAME_TIMEOUT = 240     # cap mural par partie = cap de tours de facto
 STAGGER = 2.0          # évite les collisions de nommage des replays
