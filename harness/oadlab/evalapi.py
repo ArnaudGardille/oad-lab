@@ -6,9 +6,26 @@ Contrairement au rapport CLI qui agrège tout l'historique d'un bot,
 enregistre les matchs en base sous un tag unique par version évaluée.
 """
 
+import hashlib
 import json
 
 from . import config, db, descriptors, game, stats
+
+
+def protocol_id(pool, pairs):
+    """Empreinte du protocole d'évaluation (SPEC.md P3) : deux scores
+    ne se comparent que si leurs protocoles sont identiques. Couvre
+    tout ce qui change la distribution du résultat : pool
+    d'adversaires, seeds, conditions de partie, budget de parties."""
+    blob = json.dumps({
+        "engine": config.GAME_VERSION,
+        "pool": sorted(pool), "seeds": config.EVAL_SEEDS[:pairs],
+        "map": config.MAP, "size": config.MAP_SIZE,
+        "biome": config.BIOME, "civ": config.CIV,
+        "cand_diff": config.CANDIDATE_DIFF,
+        "timeout": config.GAME_TIMEOUT,
+    }, sort_keys=True)
+    return hashlib.sha1(blob.encode()).hexdigest()[:12]
 
 
 def opponents():
@@ -61,6 +78,7 @@ def evaluate_bot(bot, pairs=4, tag=None, log=print):
     """
     tag = tag or bot
     pool = opponents()
+    proto = protocol_id(pool, pairs)
     tagged = eval_specs(bot, pairs, pool)
     results = game.run_batch([spec for spec, *_ in tagged], log=log)
     by_key = {res["spec"].key(): res for res in results}
@@ -83,7 +101,8 @@ def evaluate_bot(bot, pairs=4, tag=None, log=print):
                         cand_pos=cand_pos, spec=spec, cand_won=cand_won,
                         timed_out=res["timed_out"], game_s=game_s,
                         turns=turns, wall_s=res["wall_s"],
-                        replay_dir=replay_dir, descriptors=desc)
+                        replay_dir=replay_dir, descriptors=desc,
+                        protocol=proto)
         rows.append({"opponent": opponent, "opp_diff": diff,
                      "cand_won": cand_won, "timed_out": res["timed_out"],
                      "game_s": game_s, "turns": turns, "desc": desc})

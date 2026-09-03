@@ -206,9 +206,24 @@ unités par classe, valeurs tuées/perdues, ressources, pop, % carte).
 **Sortie** : la carte comportementale se remplit ; les runs ne
 convergent plus vers un style unique.
 
-## Phase 6 — Atelier visuel humain-LLM
+## Phase 6 — Atelier visuel humain-LLM — EN COURS (2026-09-03)
 
-- [ ] Serveur local lisant la même SQLite, push websocket
+Spécification complète dans **SPEC.md** (invariants P1-P6, modèle de
+données, front, ordre de construction). Décision : l'atelier passe
+AVANT de nouvelles campagnes d'expériences — chaque nuit sans
+interface ne produit que des logs.
+
+- [x] Le spinal (SPEC.md §4.1) : tables `runs` (provenance : commit,
+      config, pool, budget en parties) / `events` (le film d'un run,
+      importé du log) / `intents` (les verbes, en attente de la
+      boucle) ; protocole d'éval empreinté sur chaque match (P3) ;
+      manifeste run.json écrit au lancement ; import idempotent —
+      nuit 1 : 274 événements, 2 358 parties comptées depuis matches
+      (le log sous-compte : le merge de cascade OpenEvolve écrase le
+      games du stage 1) ; WAL + busy_timeout pour la cohabitation
+      boucle/front.
+- [ ] Serveur local lisant la même SQLite (endpoints JSON, polling —
+      SPEC.md §3)
 - [ ] Vue DAG des lignées + carte comportementale (d3/cytoscape)
 - [ ] Verbes : épingler, couper, brancher-avec-intention, drapeau
       « explore ici » → traduits en priors de sélection

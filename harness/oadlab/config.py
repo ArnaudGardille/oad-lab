@@ -9,6 +9,9 @@ MATCHES_DIR = RUNS / "matches"
 SNAP_REPLAYS = Path.home() / "snap/0ad/current/.local/share/0ad/replays/0.28.0"
 
 GAME_CMD = "0ad"
+GAME_VERSION = "0.28.0"   # version épinglée (README) — entre dans le
+                          # protocole d'éval : changer de moteur casse
+                          # la comparabilité des scores (SPEC.md P3)
 MODS = ["public", "oadlab"]
 
 # Conditions de partie figées : tout ce qui n'est pas fixé ici est une

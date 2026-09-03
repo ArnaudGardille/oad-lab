@@ -22,6 +22,23 @@ fi
 
 python3 scripts/make_candidate.py
 
+# Manifeste de provenance (SPEC.md P2) : qui a produit ce run, depuis
+# quel état du repo, avec quelle config et quel pool.
+DIRTY=0
+[ -n "$(git status --porcelain)" ] && DIRTY=1
+HOF=0
+[ -f runs/hof.json ] && HOF=1
+cat > "$OUT/run.json" <<EOF
+{
+ "started": $(date +%s),
+ "git_commit": "$(git rev-parse --short HEAD)",
+ "dirty": $DIRTY,
+ "config_sha": "$(sha1sum evolution/config.yaml | cut -c1-12)",
+ "hof": $HOF,
+ "iterations": $ITER
+}
+EOF
+
 # Désarme le CLI côté génération : le LLM produit des diffs, il n'agit
 # pas. Sans ce wrapper (evolution/bin/claude), l'agent de génération a
 # réellement édité forkbot/config.js et initial_config.js pendant la
