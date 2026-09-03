@@ -89,13 +89,25 @@ CREATE TABLE IF NOT EXISTS programs(
 # invalider les bases existantes.
 DESCRIPTOR_COLS = ("aggression", "boom", "military", "map_control")
 
-# Migrations douces : colonnes ajoutées après coup à matches.
-_MATCH_MIGRATIONS = [(col, "REAL") for col in DESCRIPTOR_COLS] + [
-    ("protocol", "TEXT"),      # empreinte du protocole d'éval (P3)
-]
+# Migrations douces : colonnes ajoutées après coup aux tables.
+_MIGRATIONS = {
+    "matches": [(col, "REAL") for col in DESCRIPTOR_COLS] + [
+        ("protocol", "TEXT"),  # empreinte du protocole d'éval (P3)
+    ],
+    "programs": [
+        ("games", "REAL"),     # nb de parties de l'éval → confiance (P3)
+    ],
+}
+
+
+# Schéma + migrations : une seule fois par processus. Les refaire à
+# chaque connect() prendrait un verrou d'écriture (DDL) à chaque
+# requête du serveur de l'atelier — contention inutile avec la boucle.
+_schema_ready = False
 
 
 def connect():
+    global _schema_ready
     config.RUNS.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(config.DB_PATH)
     con.row_factory = sqlite3.Row
@@ -105,16 +117,20 @@ def connect():
     # "database is locked" au lieu d'attendre.
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("PRAGMA busy_timeout=5000")
+    if _schema_ready:
+        return con
     con.executescript(SCHEMA)
-    for col, typ in _MATCH_MIGRATIONS:
-        try:
-            con.execute(f"ALTER TABLE matches ADD COLUMN {col} {typ}")
-        except sqlite3.OperationalError as e:
-            # Seule la colonne déjà présente est bénigne ; un verrou
-            # ("database is locked") avalé ici ferait planter le
-            # prochain INSERT avec un "no such column" mystérieux.
-            if "duplicate column" not in str(e):
-                raise
+    for table, cols in _MIGRATIONS.items():
+        for col, typ in cols:
+            try:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+            except sqlite3.OperationalError as e:
+                # Seule la colonne déjà présente est bénigne ; un
+                # verrou ("database is locked") avalé ici ferait
+                # planter le prochain INSERT avec un "no such column".
+                if "duplicate column" not in str(e):
+                    raise
+    _schema_ready = True
     return con
 
 
@@ -187,12 +203,12 @@ def upsert_program(con, *, id, run, parent_id, generation, iteration, ts,
     con.execute(
         "INSERT OR REPLACE INTO programs(id, run, parent_id, generation,"
         " iteration, ts, combined_score, wr_easy, wr_medium, wr_hard,"
-        " aggression, boom, changes, code)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " aggression, boom, games, changes, code)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (id, run, parent_id, generation, iteration, ts,
          m.get("combined_score"), m.get("wr_easy"), m.get("wr_medium"),
          m.get("wr_hard"), m.get("aggression"), m.get("boom"),
-         changes, code))
+         m.get("games"), changes, code))
     con.commit()
 
 

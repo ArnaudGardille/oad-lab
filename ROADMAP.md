@@ -222,8 +222,19 @@ interface ne produit que des logs.
       (le log sous-compte : le merge de cascade OpenEvolve écrase le
       games du stage 1) ; WAL + busy_timeout pour la cohabitation
       boucle/front.
-- [ ] Serveur local lisant la même SQLite (endpoints JSON, polling —
-      SPEC.md §3)
+- [x] MVP du front (SPEC.md §4.2) : `atelier/server.py` (stdlib,
+      127.0.0.1:8420, endpoints JSON + fil de rafraîchissement qui
+      réimporte le run en cours toutes les 30 s) + page unique vanilla
+      JS (`atelier/static/`). Carte comportementale 8×8, DAG des
+      lignées (couloirs par lignée, taille/couleur = score, pointillés
+      = éval incomplète), fiche programme (winrates, descripteurs,
+      résumé LLM, diff vs parent), flux d'événements, curseur
+      temporel, badges de provenance/budget par run. Verbes 📌/🧭
+      branchés sur POST /api/intents (consommation par la boucle :
+      étape suivante). Validé en live sur la nuit 2 pendant qu'elle
+      tournait. Usage : `.venv/bin/python atelier/server.py`.
+- [ ] Verbes consommés par la boucle comme priors de sélection
+      (SPEC.md §4.3) ; nœuds fantômes ; digest du matin
 - [ ] Vue DAG des lignées + carte comportementale (d3/cytoscape)
 - [ ] Verbes : épingler, couper, brancher-avec-intention, drapeau
       « explore ici » → traduits en priors de sélection

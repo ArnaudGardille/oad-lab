@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>oad-lab — atelier</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>oad-lab <span class="dim">atelier</span></h1>
+  <select id="run-select" title="run"></select>
+  <span id="run-badges"></span>
+  <label class="live"><input type="checkbox" id="live" checked> live</label>
+</header>
+
+<main>
+  <section id="map-pane">
+    <h2>Carte comportementale <span class="dim">agression × boom</span></h2>
+    <svg id="map" viewBox="0 0 340 340"></svg>
+    <div id="map-empty" class="empty" hidden>
+      Aucun descripteur comportemental sur ce run
+      (antérieur à la phase 5).
+    </div>
+    <h2>Événements</h2>
+    <ul id="events"></ul>
+  </section>
+
+  <section id="dag-pane">
+    <h2>Lignées <span id="dag-info" class="dim"></span></h2>
+    <div id="dag-scroll"><svg id="dag"></svg></div>
+    <div id="timeline">
+      <input type="range" id="iter-slider" min="0" max="0" value="0">
+      <span id="iter-label"></span>
+    </div>
+  </section>
+
+  <section id="detail-pane">
+    <h2>Programme</h2>
+    <div id="detail" class="empty">Cliquer un nœud ou une cellule.</div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
