@@ -27,7 +27,9 @@
   </section>
 
   <section id="dag-pane">
-    <h2>Lignées <span id="dag-info" class="dim"></span></h2>
+    <h2>Lignées <span id="dag-info" class="dim"></span>
+      <label class="toggle"><input type="checkbox" id="essential">
+        l’essentiel</label></h2>
     <div id="dag-scroll"><svg id="dag"></svg></div>
     <div id="timeline">
       <input type="range" id="iter-slider" min="0" max="0" value="0">
@@ -38,6 +40,17 @@
   <section id="detail-pane">
     <h2>Programme</h2>
     <div id="detail" class="empty">Cliquer un nœud ou une cellule.</div>
+    <h2>Analyste</h2>
+    <div id="chat">
+      <div id="chat-log"></div>
+      <form id="chat-form">
+        <input id="chat-input" placeholder="Pourquoi cette branche est-elle morte ?"
+               autocomplete="off">
+        <button type="submit">↩</button>
+      </form>
+      <div class="dim chat-hint">Sonnet, lecture seule, ~20 s ;
+        voit le run et le nœud sélectionné.</div>
+    </div>
   </section>
 </main>
 

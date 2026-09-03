@@ -96,6 +96,11 @@ _MIGRATIONS = {
     ],
     "programs": [
         ("games", "REAL"),     # nb de parties de l'éval → confiance (P3)
+        ("code_sha", "TEXT"),  # sha1[:12] du code = lien vers matches
+                               # (candidate = "cand-<sha>")
+        ("hypothesis", "TEXT"),   # l'hypothèse stratégique déclarée
+        ("prediction", "TEXT"),   # l'effet prédit sur les descripteurs
+        ("verdict", "TEXT"),      # confrontation prédiction/mesure
     ],
 }
 
@@ -198,17 +203,34 @@ def consume_intent(con, intent_id, consumed_by):
 
 
 def upsert_program(con, *, id, run, parent_id, generation, iteration, ts,
-                   metrics, changes, code):
+                   metrics, changes, code, code_sha=None, hypothesis=None,
+                   prediction=None, verdict=None):
     m = metrics or {}
+    # UPSERT plutôt qu'INSERT OR REPLACE : le verdict d'un programme
+    # dont le parent a été élagué des checkpoints suivants deviendrait
+    # None au réimport — un verdict acquis ne doit jamais régresser.
     con.execute(
-        "INSERT OR REPLACE INTO programs(id, run, parent_id, generation,"
+        "INSERT INTO programs(id, run, parent_id, generation,"
         " iteration, ts, combined_score, wr_easy, wr_medium, wr_hard,"
-        " aggression, boom, games, changes, code)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        " aggression, boom, games, changes, code, code_sha, hypothesis,"
+        " prediction, verdict)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        " ON CONFLICT(id) DO UPDATE SET"
+        " run=excluded.run, parent_id=excluded.parent_id,"
+        " generation=excluded.generation, iteration=excluded.iteration,"
+        " ts=excluded.ts, combined_score=excluded.combined_score,"
+        " wr_easy=excluded.wr_easy, wr_medium=excluded.wr_medium,"
+        " wr_hard=excluded.wr_hard, aggression=excluded.aggression,"
+        " boom=excluded.boom, games=excluded.games,"
+        " changes=excluded.changes, code=excluded.code,"
+        " code_sha=excluded.code_sha, hypothesis=excluded.hypothesis,"
+        " prediction=excluded.prediction,"
+        " verdict=COALESCE(excluded.verdict, programs.verdict)",
         (id, run, parent_id, generation, iteration, ts,
          m.get("combined_score"), m.get("wr_easy"), m.get("wr_medium"),
          m.get("wr_hard"), m.get("aggression"), m.get("boom"),
-         m.get("games"), changes, code))
+         m.get("games"), changes, code, code_sha, hypothesis,
+         prediction, verdict))
     con.commit()
 
 

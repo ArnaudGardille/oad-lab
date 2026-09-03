@@ -233,8 +233,30 @@ interface ne produit que des logs.
       branchés sur POST /api/intents (consommation par la boucle :
       étape suivante). Validé en live sur la nuit 2 pendant qu'elle
       tournait. Usage : `.venv/bin/python atelier/server.py`.
+- [x] Contenu sémantique (2026-09-03, SPEC.md §3) : chaque mutation
+      est une expérience — en-tête `// HYPOTHESIS` / `// PREDICTION`
+      imposé par le prompt (voyage dans le code), verdict mécanique
+      vs parent (seuils par dimension : 0,05 descripteurs, 0,25
+      winrates — sous le pas de mesure, tout est bruit) stocké en
+      base et affiché sur la fiche. Prend effet à la nuit 3 (le
+      contrat est né pendant la nuit 2).
+- [x] Lien programme↔matchs par hash du code (tag `cand-<sha1[:12]>`),
+      repli par fenêtre d'événements pour les runs antérieurs.
+      Fiche : liste des matchs, clic → courbes de la partie
+      (population, valeur détruite/perdue, % carte) lues des replays.
+- [x] Vue « l'essentiel » : DAG filtré aux itérations qui ont porté
+      fruit (meilleurs successifs, verdicts confirmés, premières
+      cellules) + leurs ancêtres.
+- [x] Panneau « analyste » : agent Sonnet jetable par question,
+      contexte = runs + nœud sélectionné + ses matchs, texte
+      seulement. **Deuxième fuite de la même classe trouvée en
+      revue : --disallowedTools ne couvre pas les serveurs MCP de la
+      machine (mail, banque...) alors que le contexte contient du
+      texte écrit par le LLM générateur → `--strict-mcp-config`
+      ajouté au chat ET au wrapper du générateur.**
 - [ ] Verbes consommés par la boucle comme priors de sélection
-      (SPEC.md §4.3) ; nœuds fantômes ; digest du matin
+      (SPEC.md §4.3) ; nœuds fantômes ; digest du matin ;
+      étiquetage LLM des clusters comportementaux (nommer les styles)
 - [ ] Vue DAG des lignées + carte comportementale (d3/cytoscape)
 - [ ] Verbes : épingler, couper, brancher-avec-intention, drapeau
       « explore ici » → traduits en priors de sélection

@@ -1,3 +1,5 @@
+// HYPOTHESIS: unmodified Petra baseline — control experiment for this pool.
+// PREDICTION: (none — baseline)
 import { aiWarn } from "simulation/ai/common-api/utils.js";
 import * as difficultyLevel from "simulation/ai/candidate/difficultyLevel.js";
 

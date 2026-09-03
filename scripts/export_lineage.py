@@ -9,12 +9,64 @@ Idempotent (INSERT OR REPLACE sur l'id du programme) : réimporter un
 checkpoint plus récent du même run met les lignées à jour.
 """
 
+import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "harness"))
 from oadlab import db  # noqa: E402
+
+# Seuil par dimension au-delà duquel un delta compte comme un vrai
+# mouvement (sous le seuil : « = », effet nul). Les winrates de stage 2
+# sont mesurés sur 8 parties par adversaire : leur pas est 0,125 et le
+# bruit binomial ~0,18 — en dessous de 0,25 (2 parties), tout est du
+# bruit. Les descripteurs sont des moyennes continues : 0,05 suffit.
+EFFECT_MIN = {"aggression": 0.05, "boom": 0.05, "military": 0.05,
+              "map_control": 0.05}
+EFFECT_MIN_DEFAULT = 0.25   # wr_*, combined_score
+
+_HYP = re.compile(r"^//\s*HYPOTHESIS:\s*(.+)$", re.M | re.I)
+_PRED = re.compile(r"^//\s*PREDICTION:\s*(.+)$", re.M | re.I)
+_CLAIM = re.compile(r"(aggression|boom|military|map_control|wr_easy"
+                    r"|wr_medium|wr_hard|wr_hof|combined_score)"
+                    r"\s*=\s*([+\-=])", re.I)
+
+
+def parse_header(code):
+    """Extrait (hypothèse, prédiction) de l'en-tête du programme —
+    le contrat imposé par le system_message de l'évolution."""
+    hyp = _HYP.search(code or "")
+    pred = _PRED.search(code or "")
+    return (hyp.group(1).strip() if hyp else None,
+            pred.group(1).strip() if pred else None)
+
+
+def verdict(prediction, child_m, parent_m):
+    """Confronte chaque affirmation directionnelle à la mesure
+    (delta enfant - parent). Rend None sans prédiction exploitable."""
+    if not prediction or not parent_m:
+        return None
+    checks = []
+    for dim, direction in _CLAIM.findall(prediction):
+        dim = dim.lower()
+        c, p = child_m.get(dim), parent_m.get(dim)
+        if c is None or p is None:
+            continue
+        delta = c - p
+        threshold = EFFECT_MIN.get(dim, EFFECT_MIN_DEFAULT)
+        measured = "+" if delta > threshold else \
+                   "-" if delta < -threshold else "="
+        ok = measured == direction
+        checks.append((dim, direction, measured, ok))
+    if not checks:
+        return None
+    n_ok = sum(1 for *_, ok in checks if ok)
+    detail = ", ".join(
+        f"{dim}{direction}{'✓' if ok else f'✗({measured})'}"
+        for dim, direction, measured, ok in checks)
+    return f"{n_ok}/{len(checks)} confirmées — {detail}"
 
 
 def main():
@@ -27,22 +79,30 @@ def main():
     # runs/evolution/<run>/checkpoints/checkpoint_N -> <run>
     run = ckpt.parent.parent.name
 
+    programs = [json.loads(f.read_text())
+                for f in sorted(programs_dir.glob("*.json"))]
+    by_id = {p["id"]: p for p in programs}
+
     con = db.connect()
-    count = 0
-    for f in sorted(programs_dir.glob("*.json")):
-        p = json.loads(f.read_text())
+    for p in programs:
         meta = p.get("metadata") or {}
+        code = p.get("code") or ""
+        hyp, pred = parse_header(code)
+        parent = by_id.get(p.get("parent_id"))
         db.upsert_program(
             con, id=p["id"], run=run, parent_id=p.get("parent_id"),
             generation=p.get("generation"),
             iteration=p.get("iteration_found"), ts=p.get("timestamp"),
             metrics=p.get("metrics"),
             changes=meta.get("changes") if isinstance(meta, dict) else None,
-            code=p.get("code"))
-        count += 1
+            code=code,
+            code_sha=hashlib.sha1(code.encode()).hexdigest()[:12],
+            hypothesis=hyp, prediction=pred,
+            verdict=verdict(pred, p.get("metrics") or {},
+                            (parent or {}).get("metrics")))
     con.commit()
     con.close()
-    print(f"{count} programmes importés dans la table programs (run {run})")
+    print(f"{len(programs)} programmes importés (run {run})")
 
 
 if __name__ == "__main__":

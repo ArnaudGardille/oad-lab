@@ -14,6 +14,8 @@ Usage : .venv/bin/python atelier/server.py [port]   (défaut 8420)
 """
 
 import json
+import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -32,8 +34,18 @@ REFRESH_S = 30
 
 PROGRAM_COLS = ("id, run, parent_id, generation, iteration, ts,"
                 " combined_score, wr_easy, wr_medium, wr_hard,"
-                " aggression, boom, games, changes,"
+                " aggression, boom, games, changes, code_sha,"
+                " hypothesis, prediction, verdict,"
                 " length(code) AS code_len")
+
+# Séries de metadata.json montrées par défaut dans les graphes de
+# partie (le reste est listé et disponible à la demande).
+DEFAULT_SERIES = [
+    ("populationCount", "population"),
+    ("enemyUnitsKilledValue", "valeur ennemie détruite"),
+    ("unitsLostValue", "valeur perdue"),
+    ("percentMapControlled", "% carte contrôlée"),
+]
 
 
 def rows(con, sql, args=()):
@@ -132,6 +144,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/intents":
                 return self._json(rows(
                     con, "SELECT * FROM intents ORDER BY ts DESC"))
+            if path == "/api/matches":
+                return self._json(self._matches(con, q.get("id")))
+            if path == "/api/series":
+                return self._json(self._series(q.get("replay"),
+                                               int(q.get("player", 1))))
             return self._json({"error": "route inconnue"}, 404)
         except (ValueError, KeyError) as e:
             return self._json({"error": f"requête invalide: {e}"}, 400)
@@ -140,8 +157,152 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             con.close()
 
+    MATCH_COLS = ("ts, candidate, opponent, opp_diff, cand_pos, seed,"
+                  " cand_won, timed_out, game_s, turns, replay,"
+                  " aggression, boom, military, map_control, protocol")
+
+    def _matches(self, con, program_id):
+        """Les matchs d'un programme. Lien nominal : tag par hash de
+        code (cand-<sha>). Repli pour les runs d'avant ce lien : la
+        fenêtre temporelle autour de l'événement `evaluated`."""
+        p = rows(con, "SELECT code_sha, run FROM programs WHERE id = ?",
+                 (program_id,))
+        if not p:
+            return []
+        sha = p[0]["code_sha"]
+        if sha:
+            got = rows(con, f"SELECT {self.MATCH_COLS} FROM matches"
+                       " WHERE candidate IN (?, ?) ORDER BY ts",
+                       (f"cand-{sha}", f"cand-{sha}-s1"))
+            if got:
+                return got
+        ev = rows(con, "SELECT ts FROM events WHERE run = ? AND"
+                  " kind = 'evaluated' AND program_id = ?"
+                  " ORDER BY ts DESC LIMIT 1", (p[0]["run"], program_id))
+        if not ev:
+            return []
+        # parallel_evaluations=1 : les batchs sont sérialisés, la
+        # borne basse exacte est l'événement `evaluated` précédent.
+        prev = rows(con, "SELECT max(ts) AS t FROM events WHERE run = ?"
+                    " AND kind = 'evaluated' AND ts < ?",
+                    (p[0]["run"], ev[0]["ts"]))
+        lo = prev[0]["t"] or ev[0]["ts"] - 900
+        return rows(con, f"SELECT {self.MATCH_COLS} FROM matches"
+                    " WHERE ts > ? AND ts <= ? ORDER BY ts",
+                    (lo, ev[0]["ts"] + 5))
+
+    def _series(self, replay, player):
+        """Les séries temporelles d'une partie, côté `player` (1 ou 2).
+        Lues du metadata.json du replay moissonné — jamais de chemin
+        arbitraire : nom de dossier strict, résolu sous runs/matches."""
+        if not replay or not re.fullmatch(r"[\w.-]+", replay) \
+                or replay in (".", ".."):
+            raise ValueError("replay invalide")
+        meta = (config.MATCHES_DIR / replay / "metadata.json").resolve()
+        if config.MATCHES_DIR.resolve() not in meta.parents:
+            raise ValueError("replay invalide")
+        if not meta.is_file():
+            return {"error": "replay inconnu"}
+        m = json.loads(meta.read_text(errors="replace"))
+        states = m.get("playerStates", [])
+        if len(states) <= player:
+            return {"error": "joueur absent"}
+        seq = states[player].get("sequences") or {}
+        out = {"time": seq.get("time", []), "series": {}, "available": []}
+        for key, label in DEFAULT_SERIES:
+            if key in seq and isinstance(seq[key], list):
+                out["series"][label] = seq[key]
+        for k, v in seq.items():
+            if isinstance(v, list) and k != "time":
+                out["available"].append(k)
+        return out
+
+    CHAT_SYSTEM = (
+        "Tu es l'analyste de l'atelier oad-lab : un laboratoire qui fait "
+        "évoluer des bots 0 A.D. par mutations LLM, évaluées par parties "
+        "réelles contre des ancres Petra et un hall of fame. Chaque "
+        "programme porte une hypothèse stratégique, une prédiction et un "
+        "verdict mesuré ; les descripteurs (aggression, boom, military, "
+        "map_control) sont dans [0,1]. Les scores sur moins de ~50 parties "
+        "sont bruités (IC ±0,15-0,2) — ne surinterprète jamais un delta "
+        "fin. Réponds en français, bref et concret, en t'appuyant "
+        "uniquement sur le CONTEXTE JSON fourni ; dis-le franchement "
+        "quand les données ne permettent pas de conclure. Tu ne peux "
+        "RIEN exécuter : si une action serait utile (épingler, couper, "
+        "explorer une zone, confirmer un score sur plus de parties), "
+        "suggère-la à l'humain.")
+
+    def _chat_context(self, con, program_id):
+        ctx = {"runs": rows(con, "SELECT id, status, iterations_done,"
+                            " errors, games, hof FROM runs"
+                            " ORDER BY started DESC LIMIT 3")}
+        ctx["meilleurs_programmes"] = rows(
+            con, f"SELECT {PROGRAM_COLS} FROM programs"
+            " WHERE combined_score IS NOT NULL"
+            " ORDER BY combined_score DESC LIMIT 8")
+        ctx["derniers_evenements"] = rows(
+            con, "SELECT ts, run, kind, iteration, program_id FROM events"
+            " WHERE kind IN ('new_best','error','completed')"
+            " ORDER BY ts DESC LIMIT 10")
+        if program_id:
+            p = rows(con, f"SELECT {PROGRAM_COLS} FROM programs"
+                     " WHERE id = ?", (program_id,))
+            if p:
+                ctx["programme_selectionne"] = p[0]
+                ctx["ses_matchs"] = self._matches(con, program_id)
+        for progs in (ctx["meilleurs_programmes"],):
+            for p in progs:
+                p.pop("changes", None)
+        return ctx
+
+    def _chat(self, con, question, program_id):
+        claude = shutil.which("claude")
+        if not claude:
+            return {"error": "CLI claude introuvable"}
+        ctx = self._chat_context(con, program_id)
+        prompt = (f"CONTEXTE JSON:\n{json.dumps(ctx, ensure_ascii=False)}"
+                  f"\n\nQUESTION: {question}")
+        # Même règle que la boucle (P5) : l'agent produit du texte,
+        # il n'agit pas.
+        # --strict-mcp-config sans --mcp-config : AUCUN serveur MCP.
+        # Le contexte contient du texte écrit par le LLM générateur ;
+        # sans ceci, une injection y trouverait les connecteurs réels
+        # de la machine (mail, banque...) que --disallowedTools ne
+        # couvre pas (revue 2026-09-03).
+        r = subprocess.run(
+            [claude, "-p", "--model", "sonnet", "--no-session-persistence",
+             "--output-format", "text", "--max-budget-usd", "0.5",
+             "--strict-mcp-config", "--disallowedTools",
+             "Bash,Edit,Write,NotebookEdit,Task,Agent,WebFetch,WebSearch,"
+             "TodoWrite,KillShell",
+             "--system-prompt", self.CHAT_SYSTEM, prompt],
+            capture_output=True, text=True, timeout=120)
+        answer = r.stdout.strip()
+        if not answer:
+            return {"error": f"pas de réponse ({r.stderr.strip()[:200]})"}
+        return {"answer": answer}
+
     def do_POST(self):  # noqa: N802
-        if urlparse(self.path).path != "/api/intents":
+        path = urlparse(self.path).path
+        if path == "/api/chat":
+            try:
+                length = min(int(self.headers.get("Content-Length", 0)),
+                             16384)
+                data = json.loads(self.rfile.read(length))
+                question = str(data["question"])[:2000]
+            except (json.JSONDecodeError, KeyError, ValueError):
+                return self._json({"error": "question invalide"}, 400)
+            con = db.connect()
+            try:
+                return self._json(self._chat(con, question,
+                                             data.get("program_id")))
+            except subprocess.TimeoutExpired:
+                return self._json({"error": "délai dépassé (120 s)"}, 504)
+            except Exception as e:  # noqa: BLE001
+                return self._json({"error": str(e)}, 500)
+            finally:
+                con.close()
+        if path != "/api/intents":
             return self._json({"error": "route inconnue"}, 404)
         try:
             length = min(int(self.headers.get("Content-Length", 0)), 8192)

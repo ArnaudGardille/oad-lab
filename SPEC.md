@@ -89,6 +89,46 @@ SQLite), polling 2-3 s (un run produit ~1 événement/min, le websocket
 est un luxe), une page d3 sans chaîne de build. La sophistication va
 dans le modèle de données, pas dans le framework.
 
+**Le contenu doit être sémantique, pas du bruit** (décisions
+2026-09-03) :
+
+- **Hypothèse → prédiction → verdict.** Chaque mutation est une
+  expérience : le générateur écrit en tête du programme une hypothèse
+  stratégique et une prédiction directionnelle sur les descripteurs
+  (`// HYPOTHESIS:` / `// PREDICTION:` — le contrat voyage DANS le
+  code, donc survit à l'outillage). Après éval, le verdict est calculé
+  mécaniquement (delta mesuré vs prédit, seuil d'effet 0,05) et stocké
+  sur le nœud. Le DAG est un cahier de laboratoire : des hypothèses
+  testées, pas des diffs. C'est aussi l'auto-instrumentation minimale :
+  pour être pris au sérieux, l'algorithme doit NOMMER les indicateurs
+  qu'il prétend faire bouger.
+- **Vue « l'essentiel »** : par défaut de lecture, le DAG filtré aux
+  itérations qui ont porté fruit (meilleurs successifs, prédictions
+  confirmées, premiers occupants de cellule) et à leurs ancêtres.
+- **Au clic sur un match : les courbes de la partie** (population,
+  valeur détruite/perdue, contrôle de carte…), lues des séries du
+  replay. Le lien programme↔matchs se fait par hash du code
+  (`programs.code_sha` = tag `cand-<sha>` des matchs).
+- **Clustering des politiques : par le comportement, pas par un LLM.**
+  Les descripteurs + les cellules MAP-Elites clusterisent déjà ; un
+  LLM sert à ÉTIQUETER un cluster (nommer un style depuis les
+  hypothèses de ses membres), pas à le former.
+- **L'interface est une API + un agent, le dashboard n'est qu'une
+  vue.** Tout ce que la page montre passe par l'API JSON — donc tout
+  agent peut le lire. Le panneau « analyste » incarne ça : un agent
+  jetable et désarmé (P5 : texte seulement) qui reçoit le contexte
+  (run, nœud sélectionné, matchs) et répond ; il suggère des verbes,
+  l'humain les clique. L'adaptation de l'interface par l'agent
+  (vues générées à la demande) est l'étape d'après, pas un dû.
+
+Dette assumée (généricité) : les colonnes `aggression`/`boom`/… sont
+nommées en dur alors qu'elles sont spécifiques à 0 A.D. La découpe
+« laboratoire générique / adaptateur de jeu » (jouer, descripteurs,
+substrat de politique, ancres) ne sera faite qu'au portage vers un
+deuxième jeu — on ne généralise bien qu'au deuxième exemplaire. D'ici
+là : toute connaissance de 0 A.D. reste confinée à `game.py`,
+`descriptors.py`, `config.py` et au mod.
+
 ## 4. Ordre de construction
 
 1. **Le spinal** (cette étape) : tables `runs`/`events`/`intents`,

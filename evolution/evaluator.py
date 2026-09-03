@@ -18,6 +18,7 @@ parallel_evaluations DOIT rester à 1 : l'évaluateur écrit dans le même
 dossier candidate/ et le parallélisme est déjà au niveau des parties.
 """
 
+import hashlib
 import shutil
 import sys
 from pathlib import Path
@@ -39,7 +40,11 @@ def _install(program_path):
 
 
 def _tag(program_path):
-    return f"cand-{Path(program_path).stem}"
+    """Tag = hash du CONTENU, pas du chemin : OpenEvolve évalue via un
+    fichier temporaire anonyme, seul le code relie les matchs en base
+    au programme du DAG (export_lineage calcule le même hash)."""
+    code = Path(program_path).read_bytes()
+    return f"cand-{hashlib.sha1(code).hexdigest()[:12]}"
 
 
 def evaluate_stage1(program_path):

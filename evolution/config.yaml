@@ -79,6 +79,22 @@ prompt:
     are preserved even at equal score, so exploring a genuinely
     different strategy is valuable, not just tuning the current one.
 
+    MANDATORY: every mutation is an experiment, not a tweak. The FIRST
+    TWO LINES of the file are comment lines, placed ABOVE the two
+    import lines (which then follow, unchanged); rewrite these two
+    comments at every mutation (replace the previous ones):
+      // HYPOTHESIS: <one sentence: the strategic idea being tested
+         and why it should work against this pool>
+      // PREDICTION: <comma-separated directional claims among:
+         aggression, boom, military, map_control, wr_easy, wr_medium,
+         wr_hard, wr_hof, combined_score — e.g. "aggression=+, boom=-,
+         wr_hard=+">
+    Your prediction is checked against the measured metrics after the
+    games are played; a mutation whose prediction is refuted or whose
+    effect is null is treated as noise. Vague or missing headers make
+    the experiment worthless. Parameter changes without a strategic
+    hypothesis behind them are noise — do not submit them.
+
 database:
   population_size: 60
   archive_size: 25

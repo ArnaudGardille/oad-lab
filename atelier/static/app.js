@@ -129,8 +129,13 @@ function layoutDag(progs) {
   return {lanes, maxLane, byId};
 }
 
-function renderDag(progs) {
+function renderDag(all) {
   const svg = $("dag");
+  let progs = all;
+  if ($("essential").checked) {
+    const keep = essentialIds(all);
+    progs = all.filter((p) => keep.has(p.id));
+  }
   const {lanes, maxLane, byId} = layoutDag(progs);
   const DX = 26, DY = 22, MX = 40, MY = 24;
   const maxIter = Math.max(0, ...progs.map((p) => p.iteration || 0));
@@ -176,6 +181,33 @@ function isFaded(p) {
   return false;
 }
 
+/* « l'essentiel » : les itérations qui ont porté fruit — meilleurs
+   scores successifs, prédictions confirmées, premiers occupants de
+   cellule — plus leurs ancêtres (le chemin qui y mène). */
+function essentialIds(progs) {
+  const keep = new Set();
+  let best = -1;
+  const cellSeen = new Set();
+  for (const p of progs) {
+    if ((p.combined_score ?? -1) > best) {
+      best = p.combined_score;
+      keep.add(p.id);
+    }
+    const cell = cellOf(p);
+    if (cell && !cellSeen.has(cell)) { cellSeen.add(cell); keep.add(p.id); }
+    if (p.verdict && !p.verdict.startsWith("0/")) keep.add(p.id);
+  }
+  const byId = new Map(progs.map((p) => [p.id, p]));
+  for (const id of [...keep]) {
+    let cur = byId.get(id);
+    while (cur && cur.parent_id && !keep.has(cur.parent_id)) {
+      keep.add(cur.parent_id);
+      cur = byId.get(cur.parent_id);
+    }
+  }
+  return keep;
+}
+
 /* ---------- fiche programme ---------- */
 
 async function selectProgram(id) {
@@ -188,11 +220,17 @@ async function selectProgram(id) {
   catch { d.innerHTML = `<div class="empty">introuvable</div>`; return; }
   const wr = (v) => v == null ? "—" : Math.round(v * 100) + " %";
   const lowconf = (p.games ?? 0) < LOWCONF_GAMES;
+  const verdictCls = !p.verdict ? "" :
+    p.verdict.startsWith("0/") ? "ko" : "ok";
   let html = `
     <div class="score" style="color:${scoreColor(p.combined_score)}">
       ${(p.combined_score ?? 0).toFixed(3)}</div>
     ${lowconf ? `<div class="lowconf-warn">⚠ estimé sur ${p.games ?? "?"}
       parties — faible confiance</div>` : ""}
+    ${p.hypothesis ? `<div class="hyp">💡 ${esc(p.hypothesis)}</div>` : ""}
+    ${p.prediction ? `<div class="dim">prédit : ${esc(p.prediction)}</div>` : ""}
+    ${p.verdict ? `<div class="verdict ${verdictCls}">verdict :
+      ${esc(p.verdict)}</div>` : ""}
     <table>
       <tr><td>itération</td><td>${p.iteration ?? "—"}</td></tr>
       <tr><td>vs Petra facile</td><td>${wr(p.wr_easy)}</td></tr>
@@ -207,6 +245,9 @@ async function selectProgram(id) {
       <button id="verb-pin">📌 épingler</button>
       <button id="verb-explore" ${cellOf(p) ? "" : "disabled"}>🧭 explore cette zone</button>
     </div>`;
+  html += `<h2>Matchs</h2><ul class="matches" id="match-list">
+    <li class="dim">chargement…</li></ul>
+    <div class="charts" id="match-charts"></div>`;
   if (p.changes)
     html += `<h2>Changement (résumé LLM)</h2>
       <div class="changes">${esc(p.changes)}</div>`;
@@ -218,6 +259,72 @@ async function selectProgram(id) {
   const ex = $("verb-explore");
   if (ex && !ex.disabled)
     ex.addEventListener("click", () => sendIntent("explore", cellOf(p)));
+  loadMatches(p.id);
+}
+
+async function loadMatches(programId) {
+  const ul = $("match-list");
+  let matches;
+  try { matches = await jget("/api/matches?id=" + encodeURIComponent(programId)); }
+  catch { ul.innerHTML = `<li class="dim">indisponibles</li>`; return; }
+  if (!matches.length) {
+    ul.innerHTML = `<li class="dim">aucun match relié</li>`;
+    return;
+  }
+  ul.innerHTML = matches.map((m, i) => {
+    const res = m.cand_won == null ? "∅" : m.cand_won ? "V" : "D";
+    const cls = m.cand_won == null ? "dim" : m.cand_won ? "w" : "l";
+    const min = m.game_s ? Math.round(m.game_s / 60) + " min" : "—";
+    return `<li data-i="${i}"><span class="${cls}">${res}</span>
+      vs ${esc(m.opponent)} d${m.opp_diff}
+      <span class="dim">pos ${m.cand_pos} · seed ${m.seed} · ${min}</span></li>`;
+  }).join("");
+  ul.querySelectorAll("li").forEach((li) =>
+    li.addEventListener("click", () => {
+      ul.querySelectorAll("li").forEach((x) => x.classList.remove("selected"));
+      li.classList.add("selected");
+      const m = matches[+li.dataset.i];
+      if (m.replay) loadCharts(m.replay, m.cand_pos);
+      else $("match-charts").innerHTML =
+        `<div class="dim">pas de replay pour ce match</div>`;
+    }));
+}
+
+async function loadCharts(replay, player) {
+  const box = $("match-charts");
+  box.innerHTML = `<div class="dim">chargement…</div>`;
+  let s;
+  try {
+    s = await jget(`/api/series?replay=${encodeURIComponent(replay)}` +
+                   `&player=${player}`);
+  } catch { box.innerHTML = `<div class="dim">séries indisponibles</div>`; return; }
+  if (s.error || !s.time?.length) {
+    box.innerHTML = `<div class="dim">${esc(s.error || "vide")}</div>`;
+    return;
+  }
+  box.innerHTML = Object.entries(s.series).map(([label, vals]) =>
+    `<div class="lbl">${esc(label)}</div>${sparkline(s.time, vals)}`
+  ).join("");
+}
+
+function sparkline(time, vals) {
+  const W = 340, H = 90, P = 6;
+  const n = Math.min(time.length, vals.length);
+  if (!n) return "";
+  const tMax = time[n - 1] || 1;
+  const realMax = Math.max(...vals.slice(0, n));
+  const vMax = Math.max(1, realMax);
+  const pts = [];
+  for (let i = 0; i < n; i++)
+    pts.push(`${(P + (W - 2 * P) * time[i] / tMax).toFixed(1)},` +
+             `${(H - P - (H - 2 * P) * vals[i] / vMax).toFixed(1)}`);
+  const lastMin = Math.round(tMax / 60);
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <polyline points="${pts.join(" ")}" fill="none"
+      stroke="var(--accent)" stroke-width="1.5"/>
+    <text x="${W - P}" y="12" text-anchor="end" fill="var(--dim)"
+      font-size="10">max ${Math.round(realMax)} · ${lastMin} min</text>
+  </svg>`;
 }
 
 async function sendIntent(verb, target) {
@@ -336,6 +443,37 @@ $("iter-slider").addEventListener("input", (e) => {
   state.sliderTouched = true;
   state.maxIter = +e.target.value;
   render();
+});
+$("essential").addEventListener("change", render);
+
+/* ---------- chat analyste ---------- */
+
+$("chat-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const input = $("chat-input");
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = "";
+  const log = $("chat-log");
+  log.insertAdjacentHTML("beforeend", `<div class="q">${esc(q)}</div>`);
+  const wait = document.createElement("div");
+  wait.className = "a dim";
+  wait.textContent = "analyse en cours…";
+  log.appendChild(wait);
+  wait.scrollIntoView();
+  try {
+    const r = await fetch("/api/chat", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({question: q, program_id: state.selected}),
+    });
+    const data = await r.json();
+    wait.className = data.answer ? "a" : "a err";
+    wait.textContent = data.answer || data.error || "erreur";
+  } catch (err) {
+    wait.className = "a err";
+    wait.textContent = String(err);
+  }
+  wait.scrollIntoView();
 });
 setInterval(() => { if ($("live").checked) refresh(); }, POLL_MS);
 refresh();

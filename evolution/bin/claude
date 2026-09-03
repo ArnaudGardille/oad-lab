@@ -15,6 +15,9 @@ if [ -z "${REAL_CLAUDE:-}" ]; then
     echo "REAL_CLAUDE non défini — ce wrapper doit être lancé via run_night.sh" >&2
     exit 1
 fi
+# --strict-mcp-config sans --mcp-config : aucun serveur MCP chargé —
+# --disallowedTools ne couvre pas les connecteurs de la machine.
 exec "$REAL_CLAUDE" \
+    --strict-mcp-config \
     --disallowedTools "Bash,Edit,Write,NotebookEdit,Task,Agent,WebFetch,WebSearch,TodoWrite,KillShell" \
     "$@"
