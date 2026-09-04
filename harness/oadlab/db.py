@@ -115,6 +115,13 @@ CREATE TABLE IF NOT EXISTS programs(
 # invalider les bases existantes.
 DESCRIPTOR_COLS = ("aggression", "boom", "military", "map_control")
 
+# Préfixe du champ `changes` d'un clone de migration inter-îlots
+# (posé par export_lineage, filtré par distill) : OpenEvolve copie le
+# programme tel quel — même code, mêmes métriques — vers un îlot
+# voisin ; ce nœud n'est pas une expérience et ne doit jamais être
+# présenté au distillateur comme une mutation à effet nul.
+MIGRATION_PREFIX = "[migration]"
+
 # Colonnes valides de la table `runs` (hors `id`, géré à part) —
 # allowlist pour upsert_run : ses **fields alimentent un f-string SQL,
 # import_run.py (qui parse log + manifeste externes) est le genre
