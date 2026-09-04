@@ -34,8 +34,9 @@ def _first_positive(times, values):
 
 
 def _value_at(times, values, target):
-    """Dernier échantillon dont l'horodatage est <= target."""
-    best = values[0] if values else 0
+    """Dernier échantillon dont l'horodatage est <= target ; None si
+    aucun échantillon n'atteint encore target (partie trop courte)."""
+    best = None
     for t, v in zip(times, values):
         if t > target:
             break
@@ -78,8 +79,8 @@ def from_metadata(meta_path, cand_pos):
 
     # Boom : vitesse de montée en population, lue à 10 min.
     pop = series("populationCount")
-    out["boom"] = min(1.0, _value_at(times, pop, BOOM_SAMPLE_S)
-                      / BOOM_POP_MAX) if pop else 0.0
+    boom_val = _value_at(times, pop, BOOM_SAMPLE_S) if pop else None
+    out["boom"] = min(1.0, boom_val / BOOM_POP_MAX) if boom_val is not None else 0.0
 
     # Part militaire de la production. Les citoyens-soldats comptent
     # comme Worker mais pas comme Civilian : 1 - Civilian/total mesure

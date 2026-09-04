@@ -36,8 +36,10 @@ def opponents():
     if config.HOF_MANIFEST.exists():
         try:
             hof = json.loads(config.HOF_MANIFEST.read_text())
-        except json.JSONDecodeError:
-            hof = []
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"{config.HOF_MANIFEST} illisible ({e}) — "
+                "relancer scripts/make_hof.py") from e
         for entry in hof:
             bot_dir = config.REPO / "bots/oadlab/simulation/ai" / entry["bot"]
             if not bot_dir.is_dir():

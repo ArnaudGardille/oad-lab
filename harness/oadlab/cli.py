@@ -1,8 +1,12 @@
-"""CLI du harnais : eval, report, selftest."""
+"""CLI du harnais : eval, report, selftest, snapshot, watch, play."""
 
 import argparse
+import re
+import shutil
+import subprocess
 import sys
 import time
+from pathlib import Path
 
 from . import config, db, evalapi, game, replay, stats
 
@@ -28,23 +32,22 @@ def report(con, bot):
         sub = [r for r in rows
                if r["opponent"] == anchor and r["opp_diff"] == diff]
         dec = [r for r in sub if r["cand_won"] is not None]
-        k = sum(r["cand_won"] for r in dec)
-        lo, hi = stats.wilson(k, len(dec))
         nores = len(sub) - len(dec)
+        k = sum(r["cand_won"] or 0 for r in sub)   # no-result = défaite, cf. combined_score
+        lo, hi = stats.wilson(k, len(sub))
         extra = f" | {nores} sans résultat" if nores else ""
         label = {2: "facile", 3: "moyen", 4: "dur"}.get(diff, str(diff))
-        if dec:
-            print(f"  vs petra {label:<7}: {k:>2}/{len(dec)} "
-                  f"({100 * k / len(dec):3.0f}%)  IC95 "
+        if sub:
+            print(f"  vs petra {label:<7}: {k:>2}/{len(sub)} "
+                  f"({100 * k / len(sub):3.0f}%)  IC95 "
                   f"[{100 * lo:.0f}–{100 * hi:.0f}%]{extra}")
         else:
-            print(f"  vs petra {label:<7}: aucune partie décisive{extra}")
-    dec = [r for r in rows if r["cand_won"] is not None]
-    k = sum(r["cand_won"] for r in dec)
-    if dec:
-        lo, hi = stats.wilson(k, len(dec))
-        print(f"  global          : {k:>2}/{len(dec)} "
-              f"({100 * k / len(dec):3.0f}%)  IC95 [{100 * lo:.0f}–{100 * hi:.0f}%]")
+            print(f"  vs petra {label:<7}: aucune partie")
+    k = sum(r["cand_won"] or 0 for r in rows)   # no-result = défaite, cf. combined_score
+    if rows:
+        lo, hi = stats.wilson(k, len(rows))
+        print(f"  global          : {k:>2}/{len(rows)} "
+              f"({100 * k / len(rows):3.0f}%)  IC95 [{100 * lo:.0f}–{100 * hi:.0f}%]")
     sk = stats.openskill_rating(rows)
     if sk:
         print(f"  openskill       : ordinal {sk['ordinal']:.1f} "
@@ -84,6 +87,119 @@ def cmd_selftest(args):
     return 0
 
 
+def _make_bot():
+    """`make_bot` vit dans scripts/ (pas un paquet) : on l'importe par
+    chemin plutôt que de dupliquer ses règles de réécriture des imports
+    JS — un bot dont les imports pointent ailleurs charge le code d'un
+    autre bot sans le moindre message d'erreur."""
+    sys.path.insert(0, str(config.REPO / "scripts"))
+    from make_candidate import make_bot
+    return make_bot
+
+
+def _best_program(run=None):
+    """Le meilleur programme écrit le plus récemment : best/ pour un run
+    terminé, dernier checkpoint pour un run en cours. Le tri est par
+    date d'écriture et non par nom de run — sinon `smoke` gagne contre
+    toutes les nuits datées."""
+    root = config.RUNS / "evolution"
+    if not root.is_dir():
+        return None
+    dirs = [root / run] if run else [d for d in root.iterdir() if d.is_dir()]
+    files = [d / "best/best_program.js" for d in dirs] + \
+            [c / "best_program.js" for d in dirs
+             for c in d.glob("checkpoints/checkpoint_*")]
+    files = [f for f in files if f.exists()]
+    return max(files, key=lambda p: p.stat().st_mtime, default=None)
+
+
+def cmd_snapshot(args):
+    """Fige un programme évolué dans un bot stable et jouable.
+
+    `candidate` ne convient ni au visionnage ni au duel : la boucle
+    écrase son config.js à chaque itération, on regarderait un autre
+    bot que celui qu'on croit. On matérialise donc une copie nommée,
+    comme make_hof.py le fait pour le hall of fame."""
+    src = Path(args.source) if args.source else _best_program(args.run)
+    if src is None:
+        print("aucun best_program.js trouvé sous runs/evolution/ — "
+              "préciser --from <config.js>")
+        return 1
+    src = src.resolve()
+    if not src.exists():
+        print(f"source introuvable : {src}")
+        return 1
+    dest = _make_bot()(args.bot, f"Snapshot oad-lab de {src.name} "
+                                 f"({args.bot}) — bot figé, jouable.")
+    # Le config.js évolué importe les modules du bot pour lequel il a
+    # été produit (candidate/) : sans réécriture, le snapshot suivrait
+    # les modifications de ce bot-là.
+    code = re.sub(r"simulation/ai/(candidate|forkbot)/",
+                  f"simulation/ai/{args.bot}/", src.read_text())
+    (dest / "config.js").write_text(code)
+    rel = src.relative_to(config.REPO) if src.is_relative_to(config.REPO) \
+        else src
+    print(f"{args.bot} figé depuis {rel}\n"
+          f"  → {dest.relative_to(config.REPO)}\n"
+          f"  jouable : oadlab watch {args.bot} | oadlab play {args.bot}")
+    return 0
+
+
+def _launch(spec, unit=None):
+    """Lance une partie visible. Détachée, elle passe par systemd :
+    lancée depuis un shell qui se termine (agent, script), la partie
+    meurt avec lui."""
+    print(" ".join(spec.cmd()))
+    if not unit:
+        return subprocess.call(spec.cmd())
+    argv = list(spec.cmd())
+    argv[0] = shutil.which(argv[0]) or argv[0]   # systemd exige un chemin absolu
+    rc = subprocess.call(["systemd-run", "--user", f"--unit={unit}",
+                          "--collect", *argv])
+    if rc == 0:
+        print(f"partie détachée — arrêt : systemctl --user stop {unit}")
+    return rc
+
+
+def _aiseed(args, diff):
+    """Par défaut, l'aiseed d'une spec d'évaluation (evalapi.eval_specs,
+    position 1) : la partie regardée est alors celle du protocole."""
+    if args.aiseed is not None:
+        return args.aiseed
+    if args.seed < 0:            # carte aléatoire : IA aléatoire aussi
+        return -1
+    return args.seed * 1000 + diff * 10 + 1
+
+
+def cmd_watch(args):
+    spec = game.GameSpec(args.bot, args.vs, args.diff, args.vs_diff,
+                         seed=args.seed, aiseed=_aiseed(args, args.vs_diff),
+                         player=-1, speed=args.speed)
+    return _launch(spec, args.unit if args.detach else None)
+
+
+def cmd_play(args):
+    """Toi joueur 1, le bot joueur 2, aux conditions du protocole."""
+    spec = game.GameSpec(None, args.bot, config.CANDIDATE_DIFF, args.diff,
+                         seed=args.seed, aiseed=_aiseed(args, args.diff),
+                         player=1)
+    return _launch(spec, args.unit if args.detach else None)
+
+
+def _visual_args(p, detach_unit):
+    p.add_argument("bot")
+    p.add_argument("--diff", type=int, default=config.CANDIDATE_DIFF,
+                   help="difficulté du bot (défaut : celle de l'éval)")
+    p.add_argument("--seed", type=int, default=101,
+                   help="seed de carte (-1 : aléatoire)")
+    p.add_argument("--aiseed", type=int, default=None,
+                   help="défaut : l'aiseed de la spec d'éval correspondante")
+    p.add_argument("--detach", action="store_true",
+                   help="lance la partie en tâche de fond (systemd)")
+    p.add_argument("--unit", default=detach_unit,
+                   help="nom de l'unité systemd avec --detach")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="oadlab")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -97,6 +213,30 @@ def main(argv=None):
     r.set_defaults(func=cmd_report)
     s = sub.add_parser("selftest", help="vérifie le déterminisme du pipeline")
     s.set_defaults(func=cmd_selftest)
+
+    sn = sub.add_parser("snapshot",
+                        help="fige un programme évolué dans un bot stable")
+    sn.add_argument("bot", nargs="?", default="watchbot")
+    sn.add_argument("--from", dest="source",
+                    help="config.js source (défaut : meilleur programme)")
+    sn.add_argument("--run", help="run d'où tirer le meilleur programme "
+                                  "(défaut : le plus récent)")
+    sn.set_defaults(func=cmd_snapshot)
+
+    w = sub.add_parser("watch",
+                       help="regarde une partie du bot en observateur")
+    _visual_args(w, "oad-watch")
+    w.add_argument("--vs", default="petra", help="adversaire (défaut petra)")
+    w.add_argument("--vs-diff", type=int, default=config.CANDIDATE_DIFF,
+                   help="difficulté de l'adversaire")
+    w.add_argument("--speed", type=int, default=5,
+                   help="vitesse de simulation (max 20 en observateur)")
+    w.set_defaults(func=cmd_watch)
+
+    p = sub.add_parser("play", help="joue contre le bot (toi joueur 1)")
+    _visual_args(p, "oad-play")
+    p.set_defaults(func=cmd_play)
+
     args = ap.parse_args(argv)
     return args.func(args) or 0
 

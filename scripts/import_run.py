@@ -134,7 +134,8 @@ def import_run(con, run_dir):
     # celui du stage 2 avant de logger (revue 2026-09-03). Hypothèse :
     # jamais deux campagnes en même temps (garde-fou machine).
     games = con.execute(
-        "SELECT count(*) FROM matches WHERE ts BETWEEN ? AND ?",
+        "SELECT count(*) FROM matches WHERE ts BETWEEN ? AND ?"
+        " AND candidate LIKE 'cand-%'",
         ((started or 0) - margin, (last_ts or 0) + 60)).fetchone()[0]
 
     db.upsert_run(

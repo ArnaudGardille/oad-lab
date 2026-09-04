@@ -33,8 +33,6 @@ def openskill_rating(match_rows):
     cand = model.rating(name="candidate")
     played = 0
     for row in match_rows:
-        if row["cand_won"] is None:
-            continue
         anchor = model.rating(mu=ANCHOR_MU.get(row["opp_diff"], 25.0),
                               sigma=1.0, name="anchor")
         ranks = [0, 1] if row["cand_won"] else [1, 0]

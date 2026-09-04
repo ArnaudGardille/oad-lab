@@ -17,7 +17,11 @@ if [ -z "${REAL_CLAUDE:-}" ]; then
 fi
 # --strict-mcp-config sans --mcp-config : aucun serveur MCP chargé —
 # --disallowedTools ne couvre pas les connecteurs de la machine.
+# Read/Glob/Grep/NotebookRead sont bloqués aussi : sans path confinement,
+# un contexte non fiable pourrait sinon exfiltrer le contenu de fichiers
+# arbitraires du repo (voire du home) via les commentaires HYPOTHESIS/
+# PREDICTION obligatoires, qui finissent commités et affichés sur l'atelier.
 exec "$REAL_CLAUDE" \
     --strict-mcp-config \
-    --disallowedTools "Bash,Edit,Write,NotebookEdit,Task,Agent,WebFetch,WebSearch,TodoWrite,KillShell" \
+    --disallowedTools "Bash,Edit,Write,NotebookEdit,Task,Agent,WebFetch,WebSearch,TodoWrite,KillShell,Read,Glob,Grep,NotebookRead" \
     "$@"
