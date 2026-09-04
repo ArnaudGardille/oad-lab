@@ -85,21 +85,60 @@ def main():
 
     con = db.connect()
     for p in programs:
-        meta = p.get("metadata") or {}
+        meta = p.get("metadata") if isinstance(p.get("metadata"), dict) \
+            else {}
         code = p.get("code") or ""
-        hyp, pred = parse_header(code)
         parent = by_id.get(p.get("parent_id"))
+        pid8 = (p.get("parent_id") or "?")[:8]
+        if meta.get("migrant"):
+            # Clone de migration inter-îlots : OpenEvolve copie code,
+            # métriques ET résumé de changements de l'original. Importé
+            # tel quel, le nœud ressemble à une mutation dont le delta
+            # est exactement 0.0 partout — c'est l'« anomalie confirmée
+            # 9x » du carnet (nuit 2026-09-03). On remplace le matériau
+            # hérité par un marquage explicite.
+            hyp = pred = None
+            changes = (f"{db.MIGRATION_PREFIX} copie conforme de {pid8}"
+                       f" vers l'îlot {meta.get('island', '?')} —"
+                       " pas une mutation")
+            vd = f"migration — copie de {pid8}, non-expérience"
+        else:
+            hyp, pred = parse_header(code)
+            changes = meta.get("changes")
+            if parent is None and p.get("parent_id"):
+                # Parent élagué du checkpoint : retomber sur la base,
+                # qu'un import précédent a peut-être garnie — sans quoi
+                # ni le verdict ni la détection de no-op ne le voient.
+                row = con.execute(
+                    "SELECT code, combined_score, wr_easy, wr_medium,"
+                    " wr_hard, aggression, boom FROM programs"
+                    " WHERE id = ?", (p["parent_id"],)).fetchone()
+                if row:
+                    parent = {"code": row["code"],
+                              "metrics": {k: row[k] for k in row.keys()
+                                          if k != "code"}}
+            if parent and (parent.get("code") or "") == code:
+                # apply_diff d'OpenEvolve ignore en silence un bloc
+                # SEARCH sans correspondance exacte : l'enfant garde le
+                # code du parent et la mutation décrite dans `changes`
+                # n'a jamais été jouée — un verdict directionnel serait
+                # un mensonge.
+                vd = ("diff non appliqué (SEARCH sans correspondance) —"
+                      f" code identique au parent {pid8}, mutation"
+                      " jamais testée")
+            else:
+                vd = verdict(pred, p.get("metrics") or {},
+                             (parent or {}).get("metrics"))
         db.upsert_program(
             con, id=p["id"], run=run, parent_id=p.get("parent_id"),
             generation=p.get("generation"),
             iteration=p.get("iteration_found"), ts=p.get("timestamp"),
             metrics=p.get("metrics"),
-            changes=meta.get("changes") if isinstance(meta, dict) else None,
+            changes=changes,
             code=code,
             code_sha=hashlib.sha1(code.encode()).hexdigest()[:12],
             hypothesis=hyp, prediction=pred,
-            verdict=verdict(pred, p.get("metrics") or {},
-                            (parent or {}).get("metrics")))
+            verdict=vd)
     con.commit()
     con.close()
     print(f"{len(programs)} programmes importés (run {run})")

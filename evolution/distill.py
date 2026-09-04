@@ -77,6 +77,11 @@ def material(con, run):
     by_id = {r["id"]: r for r in rows}
     out = []
     for r in rows:
+        # Les clones de migration inter-îlots (marqués par
+        # export_lineage) ne sont pas des expériences : mêmes code et
+        # métriques que l'original, delta 0.0 partout par construction.
+        if (r["changes"] or "").startswith(db.MIGRATION_PREFIX):
+            continue
         parent = by_id.get(r["parent_id"])
         exp = {"id": r["id"][:8], "iter": r["iteration"],
                "score": r["combined_score"], "games": r["games"],

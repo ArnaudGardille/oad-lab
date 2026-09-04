@@ -108,6 +108,14 @@ prompt:
     early economy, better timed aggression, smarter phase timings —
     not by stalling games.
 
+    When writing SEARCH/REPLACE diff blocks, copy every SEARCH block
+    CHARACTER-FOR-CHARACTER from the current program shown in this
+    prompt — never quote from memory or from another program's code
+    shown as inspiration. A SEARCH block that does not match exactly
+    is silently dropped: your mutation is never applied, the games are
+    wasted re-evaluating the unchanged parent, and the experiment
+    records a lie.
+
     The population is also mapped on two behavioral dimensions measured
     from replays: aggression (how early the bot draws first blood) and
     boom (population reached by minute 10). Distinct playstyles —
