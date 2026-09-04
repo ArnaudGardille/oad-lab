@@ -266,8 +266,25 @@ interface ne produit que des logs.
       démarrage = échec bruyant, pas d'intentions perdues en silence).
       Front : ✂ couper et 🌱 brancher ajoutés, liste « intentions en
       attente » dans le panneau gauche.
-- [ ] Nœuds fantômes ; digest du matin ; étiquetage LLM des clusters
-      comportementaux (nommer les styles)
+- [x] Étage cognitif, chantier A — le carnet (2026-09-04, SPEC.md
+      §3 bis) : tables `lessons` + `agent_runs` (budget par rôle, P6),
+      distillateur (`evolution/distill.py`, agent Sonnet désarmé,
+      JSON strict d'opérations add/update/retire, plafond structurel
+      de 24 leçons, garde-fous op-par-op) ; le composeur injecte le
+      carnet actif dans le prompt du générateur (section LAB
+      NOTEBOOK, désactivable `OADLAB_NO_NOTEBOOK=1` pour les nuits
+      A/B) ; section « Carnet » dans l'atelier + contexte de
+      l'analyste. Amorcé sur les nuits 1-2 : 11 leçons actives
+      (~0,26 $/distillation) — dont une anomalie détectée (9 mutations
+      diverses à 0,0 partout : piste de bug) et la méta-observation
+      que le micro-tuning de config.js est épuisé. Reste à câbler :
+      l'appel du distillateur dans la moisson de fin de run.
+- [ ] Chantier B — rapports de match, embeddings locaux, dédup
+      sémantique, styles étiquetés (SPEC.md §3 bis)
+- [ ] Chantier C — le PI : portefeuille d'expériences en intentions
+      fantômes ; digest du matin (même agent, autre sens)
+- [ ] Chantier D — espace expressif : modules de comportement
+      évoluables (piste parallèle, prérequis de valeur)
 - [ ] Vue DAG des lignées + carte comportementale (d3/cytoscape)
 - [ ] Verbes : épingler, couper, brancher-avec-intention, drapeau
       « explore ici » → traduits en priors de sélection

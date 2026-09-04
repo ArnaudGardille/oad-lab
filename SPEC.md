@@ -20,6 +20,12 @@ cartes se recalculent depuis les faits bruts. Chaque run porte sa
 provenance : commit git, arbre sale ou non, digest de la config,
 présence du hall of fame.
 
+Exception assumée : le réimport d'un programme (`upsert_program`)
+met à jour ses champs depuis le checkpoint le plus récent, sauf le
+verdict, qui ne régresse jamais à `NULL` — un verdict acquis reste
+acquis même si le parent du programme disparaît d'un checkpoint
+ultérieur.
+
 **P3 — La comparabilité est explicite.** Chaque match porte un
 `protocol` (empreinte du pool d'adversaires + seeds + carte + civ +
 timeout + nb de paires). Deux scores de protocoles différents ne se
@@ -120,6 +126,52 @@ dans le modèle de données, pas dans le framework.
   (run, nœud sélectionné, matchs) et répond ; il suggère des verbes,
   l'humain les clique. L'adaptation de l'interface par l'agent
   (vues générées à la demande) est l'étape d'après, pas un dû.
+
+## 3 bis. L'étage cognitif (décisions 2026-09-04)
+
+Le laboratoire (harnais, base, atelier, verbes) mesure, trace et
+obéit. L'étage cognitif lit des faits, écrit du texte et oriente —
+JAMAIS l'inverse. Chaque capacité cognitive suit la même grammaire :
+entrées/sorties en base (P1), agent jetable désarmé (P5,
+--strict-mcp-config + --disallowedTools), décisions tracées et
+datées. Pas de démon : des étapes batch aux points du cycle de vie.
+
+L'unité de travail n'est plus « la nuit » mais le **cycle de
+recherche** :
+
+    composer → courir → moissonner → comprendre → proposer → (humain)
+
+- composer (apply_intents) : intentions + carnet → config effective ;
+- courir : la boucle OpenEvolve, inchangée tant qu'elle suffit ;
+- moissonner : import, lignées, verdicts — mécanique, du code ;
+- comprendre : agents interprètes — distillateur du carnet (A),
+  rapports de match + embeddings + styles (B) ;
+- proposer : le PI écrit un portefeuille d'intentions fantômes (C),
+  l'humain édite dans l'atelier, la nuit s'auto-approuve.
+
+Chantiers, dans l'ordre des dépendances :
+- **A — le carnet (la mémoire)** : table `lessons` (loi / impasse /
+  question, preuves, confiance), distillateur post-run qui MET À JOUR
+  (renforce, contredit, fusionne — jamais d'append aveugle),
+  injection dans le prompt du générateur par le composeur.
+- **B — la perception** : rapports de match LLM depuis les séries,
+  embeddings locaux (sentence-transformers), dédup sémantique,
+  clusters de styles étiquetés.
+- **C — la volonté** : le PI. Lit carnet + carte + budget, écrit le
+  portefeuille (exploiter / explorer l'intéressant / confirmer le
+  champion) en intentions `author='agent'`. Le juge « intéressamment
+  nouveau » (OMNI) est un rôle du PI. Le digest du matin est le même
+  agent dans l'autre sens.
+- **D — l'espace expressif** (piste parallèle, prérequis de valeur) :
+  modules de comportement évoluables, pas seulement config.js.
+
+Garde-fous de méthode :
+- l'étage cognitif prouve qu'il sert : nuits A/B (avec/sans carnet,
+  `OADLAB_NO_NOTEBOOK=1`), comparables par protocole ;
+- budget LLM par rôle, compté en base (P6, table `agent_runs`) ;
+- l'« intéressant » influence l'allocation du budget d'exploration,
+  JAMAIS la fitness (les parties gagnées, mesurées par le code) ;
+- exploiters et variation d'environnements : quand la ligue plafonne.
 
 Dette assumée (généricité) : les colonnes `aggression`/`boom`/… sont
 nommées en dur alors qu'elles sont spécifiques à 0 A.D. La découpe

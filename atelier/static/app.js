@@ -181,6 +181,15 @@ function isFaded(p) {
   return false;
 }
 
+/* vrai si au moins la moitié des prédictions annoncées se sont
+   confirmées (verdict au format "n/m confirmées — ..."). */
+function verdictConfirmed(verdict) {
+  if (!verdict) return false;
+  const m = verdict.match(/^(\d+)\/(\d+)/);
+  if (!m) return false;
+  return Number(m[1]) >= Number(m[2]) / 2;
+}
+
 /* « l'essentiel » : les itérations qui ont porté fruit — meilleurs
    scores successifs, prédictions confirmées, premiers occupants de
    cellule — plus leurs ancêtres (le chemin qui y mène). */
@@ -195,7 +204,7 @@ function essentialIds(progs) {
     }
     const cell = cellOf(p);
     if (cell && !cellSeen.has(cell)) { cellSeen.add(cell); keep.add(p.id); }
-    if (p.verdict && !p.verdict.startsWith("0/")) keep.add(p.id);
+    if (verdictConfirmed(p.verdict)) keep.add(p.id);
   }
   const byId = new Map(progs.map((p) => [p.id, p]));
   for (const id of [...keep]) {
@@ -220,8 +229,7 @@ async function selectProgram(id) {
   catch { d.innerHTML = `<div class="empty">introuvable</div>`; return; }
   const wr = (v) => v == null ? "—" : Math.round(v * 100) + " %";
   const lowconf = (p.games ?? 0) < LOWCONF_GAMES;
-  const verdictCls = !p.verdict ? "" :
-    p.verdict.startsWith("0/") ? "ko" : "ok";
+  const verdictCls = !p.verdict ? "" : verdictConfirmed(p.verdict) ? "ok" : "ko";
   let html = `
     <div class="score" style="color:${scoreColor(p.combined_score)}">
       ${(p.combined_score ?? 0).toFixed(3)}</div>
@@ -348,6 +356,24 @@ async function sendIntent(verb, target, askNote = false) {
   alert(`Intention « ${verb} » enregistrée (consommée au prochain run).`);
 }
 
+/* ---------- carnet de laboratoire ---------- */
+
+const KIND_BADGE = {law: ["⚖", "loi"], impasse: ["⛔", "impasse"],
+                    question: ["❓", "question"]};
+
+async function renderLessons() {
+  let lessons;
+  try { lessons = await jget("/api/lessons"); } catch { return; }
+  const ul = $("lessons");
+  ul.innerHTML = lessons.length ? lessons.map((l) => {
+    const [icon, label] = KIND_BADGE[l.kind] || ["·", l.kind];
+    return `<li><b title="${esc(label)}">${icon}</b>
+      ${esc(l.statement)}
+      ${l.confidence ? `<span class="dim">(${esc(l.confidence)})</span>` : ""}</li>`;
+  }).join("") : `<li class="dim">vide — le distillateur le remplit
+    après chaque run</li>`;
+}
+
 /* ---------- intentions en attente ---------- */
 
 const VERB_ICON = {pin: "📌", cut: "✂", branch: "🌱", explore: "🧭"};
@@ -452,6 +478,7 @@ async function refresh() {
     if (events.length) state.lastEventTs = events[events.length - 1].ts;
     renderEvents(events);
     renderIntents();
+    renderLessons();
     render();
   } catch (e) {
     console.error(e);

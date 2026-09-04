@@ -17,6 +17,7 @@ l'identique : le chemin de lancement est le même avec ou sans ordres.
 Usage : apply_intents.py <dossier_du_run> [--dry-run]
 """
 
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -41,6 +42,23 @@ def _block_str(dumper, data):
 
 
 yaml.SafeDumper.add_representer(str, _block_str)
+
+NOTEBOOK_HEADER = ("\nLAB NOTEBOOK — lessons distilled from prior "
+                   "experiments in this lab. Build on the laws, do not "
+                   "retry the impasses, the open questions are worthy "
+                   "experiments:\n")
+KIND_LABEL = {"law": "LAW", "impasse": "IMPASSE", "question": "OPEN"}
+
+
+def notebook(con):
+    """Le carnet actif, formaté pour le system_message. Désactivable
+    (OADLAB_NO_NOTEBOOK=1) pour les nuits A/B : l'étage cognitif doit
+    prouver qu'il sert (SPEC.md §3 bis)."""
+    if os.environ.get("OADLAB_NO_NOTEBOOK"):
+        return []
+    return [f"- [{KIND_LABEL.get(r['kind'], r['kind'])}] {r['statement']}"
+            f"{f' ({r['confidence']})' if r['confidence'] else ''}"
+            for r in db.active_lessons(con)]
 
 
 def _program(con, pid):
@@ -124,6 +142,10 @@ def main():
                         out / "initial.js")
 
     grid = cfg.get("database", {}).get("feature_bins", 8)
+    notes = notebook(con)
+    if notes:
+        cfg["prompt"]["system_message"] += \
+            NOTEBOOK_HEADER + "\n".join(notes) + "\n"
     lines = guidance(con, intents,
                      seed_prog["id"] if seed_prog else None, grid)
     if lines:
@@ -138,7 +160,8 @@ def main():
     verbs = ", ".join(f"{i['verb']}:{(i['target'] or '')[:8]}"
                       for i in intents) or "aucune"
     print(f"intentions consommées ({'dry-run, ' if dry else ''}"
-          f"{len(intents)}) : {verbs}{seed_note}")
+          f"{len(intents)}) : {verbs}{seed_note} ;"
+          f" carnet : {len(notes)} leçon(s)")
 
 
 if __name__ == "__main__":

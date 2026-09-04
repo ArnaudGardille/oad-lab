@@ -144,6 +144,10 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/intents":
                 return self._json(rows(
                     con, "SELECT * FROM intents ORDER BY ts DESC"))
+            if path == "/api/lessons":
+                return self._json(rows(
+                    con, "SELECT * FROM lessons WHERE status='active'"
+                    " ORDER BY kind, id"))
             if path == "/api/matches":
                 return self._json(self._matches(con, q.get("id")))
             if path == "/api/series":
@@ -240,6 +244,9 @@ class Handler(BaseHTTPRequestHandler):
             con, f"SELECT {PROGRAM_COLS} FROM programs"
             " WHERE combined_score IS NOT NULL"
             " ORDER BY combined_score DESC LIMIT 8")
+        ctx["carnet"] = rows(
+            con, "SELECT kind, statement, confidence FROM lessons"
+            " WHERE status='active' ORDER BY kind, id")
         ctx["derniers_evenements"] = rows(
             con, "SELECT ts, run, kind, iteration, program_id FROM events"
             " WHERE kind IN ('new_best','error','completed')"
@@ -269,12 +276,14 @@ class Handler(BaseHTTPRequestHandler):
         # sans ceci, une injection y trouverait les connecteurs réels
         # de la machine (mail, banque...) que --disallowedTools ne
         # couvre pas (revue 2026-09-03).
+        # Read/Glob/Grep/NotebookRead bloqués aussi : même contexte
+        # injectable, risque d'exfiltration via lecture du disque.
         r = subprocess.run(
             [claude, "-p", "--model", "sonnet", "--no-session-persistence",
              "--output-format", "text", "--max-budget-usd", "0.5",
              "--strict-mcp-config", "--disallowedTools",
              "Bash,Edit,Write,NotebookEdit,Task,Agent,WebFetch,WebSearch,"
-             "TodoWrite,KillShell",
+             "TodoWrite,KillShell,Read,Glob,Grep,NotebookRead",
              "--system-prompt", self.CHAT_SYSTEM, prompt],
             capture_output=True, text=True, timeout=120)
         answer = r.stdout.strip()
@@ -282,7 +291,16 @@ class Handler(BaseHTTPRequestHandler):
             return {"error": f"pas de réponse ({r.stderr.strip()[:200]})"}
         return {"answer": answer}
 
+    def _same_origin(self):
+        origin = self.headers.get("Origin")
+        if origin is None:
+            return True
+        host = self.headers.get("Host", "")
+        return origin in (f"http://{host}", f"https://{host}")
+
     def do_POST(self):  # noqa: N802
+        if not self._same_origin():
+            return self._json({"error": "origine refusée"}, 403)
         path = urlparse(self.path).path
         if path == "/api/chat":
             try:

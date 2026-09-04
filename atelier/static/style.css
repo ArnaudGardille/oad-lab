@@ -46,6 +46,8 @@ main > section {
 #map text { fill: #fff; font-size: 9px; pointer-events: none; }
 #map .axis { fill: var(--dim); font-size: 10px; }
 
+#lessons { list-style: none; font-size: 12.5px; }
+#lessons li { padding: 3px 0; border-bottom: 1px solid var(--line); }
 #intents { list-style: none; font-size: 12.5px; }
 #intents li { padding: 2px 0; border-bottom: 1px solid var(--line); }
 #events { list-style: none; font-size: 12.5px; }

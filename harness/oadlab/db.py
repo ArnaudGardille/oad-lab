@@ -66,6 +66,32 @@ CREATE TABLE IF NOT EXISTS intents(
     consumed_by TEXT           -- run qui l'a consommée
 );
 
+-- Le carnet de laboratoire (SPEC.md §3 bis, chantier A) : ce que les
+-- expériences ont appris, distillé par un agent, injecté dans le
+-- prompt du générateur par le composeur.
+CREATE TABLE IF NOT EXISTS lessons(
+    id INTEGER PRIMARY KEY,
+    ts REAL,                   -- dernière mise à jour
+    kind TEXT NOT NULL,        -- law | impasse | question
+    statement TEXT NOT NULL,   -- une phrase, actionnable
+    confidence TEXT,           -- ex. "confirmé 3x", "faible", "contesté"
+    evidence TEXT,             -- JSON : ids de programmes-preuves
+    status TEXT DEFAULT 'active',  -- active | retired
+    updated_by TEXT            -- cycle/run qui l'a touchée
+);
+
+-- Budget des agents cognitifs (P6) : chaque appel LLM d'un rôle
+-- (distiller, reporter, pi, analyst) est compté comme les parties.
+CREATE TABLE IF NOT EXISTS agent_runs(
+    id INTEGER PRIMARY KEY,
+    ts REAL,
+    role TEXT NOT NULL,
+    run TEXT,                  -- cycle concerné, si applicable
+    cost_usd REAL,
+    ok INTEGER,                -- 1 réussi, 0 échec
+    detail TEXT
+);
+
 -- DAG des lignées, importé des checkpoints OpenEvolve
 -- (scripts/export_lineage.py). Même base que les matchs : c'est elle
 -- que l'atelier visuel (phase 6) lira.
@@ -88,6 +114,15 @@ CREATE TABLE IF NOT EXISTS programs(
 # (moyennés par batch dans evalapi). Ajoutés par ALTER pour ne pas
 # invalider les bases existantes.
 DESCRIPTOR_COLS = ("aggression", "boom", "military", "map_control")
+
+# Colonnes valides de la table `runs` (hors `id`, géré à part) —
+# allowlist pour upsert_run : ses **fields alimentent un f-string SQL,
+# import_run.py (qui parse log + manifeste externes) est le genre
+# d'appelant qui accrète des clés au fil du temps.
+RUN_COLS = frozenset({
+    "kind", "started", "finished", "git_commit", "dirty", "config_sha",
+    "hof", "iterations", "iterations_done", "errors", "games", "status",
+})
 
 # Migrations douces : colonnes ajoutées après coup aux tables.
 _MIGRATIONS = {
@@ -158,6 +193,9 @@ def insert_match(con, *, candidate, opponent, opp_diff, cand_pos, spec,
 
 
 def upsert_run(con, *, id, **fields):
+    bad = set(fields) - RUN_COLS
+    if bad:
+        raise ValueError(f"colonnes runs inconnues: {sorted(bad)}")
     cols = ["id"] + list(fields)
     con.execute(
         f"INSERT OR REPLACE INTO runs({','.join(cols)})"
@@ -231,6 +269,85 @@ def upsert_program(con, *, id, run, parent_id, generation, iteration, ts,
          m.get("wr_hard"), m.get("aggression"), m.get("boom"),
          m.get("games"), changes, code, code_sha, hypothesis,
          prediction, verdict))
+    con.commit()
+
+
+def active_lessons(con):
+    return con.execute(
+        "SELECT * FROM lessons WHERE status = 'active'"
+        " ORDER BY kind, id").fetchall()
+
+
+LESSON_KINDS = ("law", "impasse", "question")
+
+
+def apply_lesson_ops(con, ops, updated_by, max_active=None):
+    """Applique les opérations du distillateur : add / update / retire.
+    Rend (appliquées, rejetées). Les opérations malformées sont
+    rejetées une à une — jamais tout le lot. `max_active` est le
+    plafond STRUCTUREL du carnet : la consigne de fusion du prompt ne
+    suffit pas, un carnet qui enfle sans borne est le symptôme d'un
+    distillateur qui empile au lieu d'apprendre."""
+    import json as _json
+    now = time.time()
+    done, bad = 0, []
+    active = con.execute(
+        "SELECT count(*) FROM lessons WHERE status='active'"
+    ).fetchone()[0]
+    for op in ops:
+        try:
+            action = op["op"]
+            if action == "add":
+                if op.get("kind") not in LESSON_KINDS:
+                    raise ValueError(f"kind invalide: {op.get('kind')!r}")
+                if not op.get("statement"):
+                    raise ValueError("statement vide")
+                if max_active is not None and active >= max_active:
+                    raise ValueError(
+                        f"carnet plein ({max_active}) — fusionner ou"
+                        " retirer avant d'ajouter")
+                con.execute(
+                    "INSERT INTO lessons(ts, kind, statement, confidence,"
+                    " evidence, updated_by) VALUES(?,?,?,?,?,?)",
+                    (now, op["kind"], op["statement"],
+                     op.get("confidence"),
+                     _json.dumps(op.get("evidence", [])), updated_by))
+                active += 1
+            elif action == "update":
+                cur = con.execute(
+                    "UPDATE lessons SET ts=?, statement=?, confidence=?,"
+                    " evidence=?, updated_by=? WHERE id=? AND"
+                    " status='active'",
+                    (now, op["statement"], op.get("confidence"),
+                     _json.dumps(op.get("evidence", [])), updated_by,
+                     int(op["id"])))
+                if cur.rowcount == 0:
+                    raise KeyError(f"lesson {op['id']} inconnue")
+            elif action == "retire":
+                cur = con.execute(
+                    "UPDATE lessons SET ts=?, status='retired',"
+                    " updated_by=? WHERE id=? AND status='active'",
+                    (now, updated_by, int(op["id"])))
+                if cur.rowcount == 0:
+                    raise KeyError(f"lesson {op['id']} inconnue")
+                active -= 1
+            else:
+                raise ValueError(f"op inconnue: {action}")
+            done += 1
+        except (KeyError, ValueError, TypeError, sqlite3.Error) as e:
+            # sqlite3.Error inclus : une contrainte violée (NOT NULL...)
+            # rejette CETTE op, pas tout le lot.
+            bad.append(f"{op!r}: {e}")
+    con.commit()
+    return done, bad
+
+
+def record_agent_run(con, *, role, run=None, cost_usd=None, ok=True,
+                     detail=None):
+    con.execute(
+        "INSERT INTO agent_runs(ts, role, run, cost_usd, ok, detail)"
+        " VALUES(?,?,?,?,?,?)",
+        (time.time(), role, run, cost_usd, int(ok), detail))
     con.commit()
 
 
