@@ -99,7 +99,11 @@ def main():
                      f"{p['id'][:8]} (score {score:.3f}).", dest=stage)
             code = p["code"].replace("simulation/ai/candidate/",
                                      f"simulation/ai/{name}/")
-            (stage / "config.js").write_text(code)
+            # Substrat du programme : couche stratégie (chantier D) ou
+            # config.js (ère antérieure) — les deux restent jouables.
+            target = "strategy.js" if "export function Strategy" in code \
+                else "config.js"
+            (stage / target).write_text(code)
             staged.append((stage, AI_DIR / name))
             manifest.append({"bot": name, "program_id": p["id"],
                              "combined_score": score,

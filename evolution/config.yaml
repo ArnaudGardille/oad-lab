@@ -11,9 +11,10 @@ random_seed: 42
 language: "javascript"
 file_suffix: ".js"
 
-# config.js fait ~11,4 Ko ; laisser de la marge sans autoriser
-# l'obésité (le fichier entier passe dans le prompt).
-max_code_length: 24000
+# strategy.js part à ~1,5 Ko ; le plafond borne l'obésité d'une couche
+# censée rester fine et rapide (le fichier entier passe dans le prompt
+# ET tourne dans la boucle de simulation).
+max_code_length: 6000
 diff_based_evolution: true
 
 llm:
@@ -35,28 +36,63 @@ llm:
 
 prompt:
   system_message: |
-    You are evolving `config.js` of a Petra-derived AI bot for the RTS
-    game 0 A.D. (version 0.28). This file defines the bot's strategy
-    parameters and is loaded as an ES module by the game engine's
-    SpiderMonkey runtime.
+    You are evolving `strategy.js` — the STRATEGY LAYER of a
+    Petra-derived AI bot for the RTS game 0 A.D. (version 0.28),
+    loaded as an ES module by the engine's SpiderMonkey runtime.
+
+    How it works: `Strategy.prototype.update(gameState, config)` is
+    called every AI turn (~2.4s of game time), BEFORE Petra's
+    headquarters update. Petra re-reads its `config` continuously, so
+    rewriting config fields IN PLACE takes effect immediately — and
+    can depend on the game state. This is the whole point: you can
+    express CONDITIONAL, STATE-DEPENDENT strategies (timing pushes,
+    reactive defense, eco/military pivots, adaptive phase timing), not
+    just static parameter values. `this.mem` is a plain object
+    persisted across turns for your own bookkeeping (previous
+    readings, one-shot flags, saved vanilla values).
+
+    Key config fields Petra reads (all mutable live):
+    - config.Economy: popPhase2, workPhase3, workPhase4 (phase-up
+      thresholds), targetNumWorkers, targetNumTraders, femaleRatio
+    - config.Military: popForBarracks1/2, popForForge, towerLapseTime,
+      fortressLapseTime, numSentryTowers
+    - config.Defense: defenseRatio ({ally, neutral, own}),
+      armyCompactSize, armyBreakawaySize
+    - config.priorities: food, wood, stones, metal, villager,
+      citizenSoldier, trader, healer, house, dropsites, field,
+      economicBuilding, militaryBuilding, defenseBuilding, civilCentre,
+      majorTech, minorTech, emergency
+    - config.popScaling, config.difficulty (read-only context)
+
+    gameState API you can rely on (verified against this Petra fork):
+    - gameState.getTimeElapsed() -> ms of game time
+    - gameState.getPopulation(), getPopulationLimit(), getPopulationMax()
+    - gameState.currentPhase() -> 1|2|3, gameState.getPlayerCiv()
+    - gameState.getResources() -> resource pool with .food, .wood...
+      and .canAfford(cost) — e.g. canAfford({food: 500, wood: 300})
+    - gameState.getOwnUnits(), getOwnStructures(), getOwnFoundations()
+      -> entity collections (.length works; .filter(API3.Filters...)
+      only if you keep it simple — prefer counts)
+    - gameState.getEnemyUnits(id), getEnemyStructures(id) for an enemy
+      player id; enumerate enemies via gameState.getEnemies()
+    - gameState.getOwnEntitiesByClass("Cavalry", true) -> collection
+    Anything else from the engine is NOT guaranteed — if unsure, stick
+    to this list. Wrap risky reads in your own checks; exceptions only
+    cost that turn's adjustment (caught by the caller) but a strategy
+    that throws every turn is dead weight.
 
     Hard constraints — breaking any of these makes the bot lose every
     game (score 0):
-    - Keep the two `import` lines and the `export function Config(...)`
-      signature exactly as they are (the import paths must stay
-      `simulation/ai/common-api/utils.js` and
-      `simulation/ai/candidate/difficultyLevel.js`).
-    - The Config prototype methods at the end of the file must keep
-      their names and signatures.
+    - Keep `export function Strategy(config)` and the
+      `Strategy.prototype.update = function(gameState, config)`
+      signature exactly.
     - Valid SpiderMonkey/ES2020 JavaScript only. No Node APIs, no
-      network, no filesystem.
-
-    What you can change: every strategy parameter (economy targets,
-    military timings, phase advancement, tower/fortress cadence, attack
-    plan sizes, priorities...), and you may add new derived parameters
-    or restructure values, as long as existing keys consumed elsewhere
-    keep existing (other Petra modules read Config fields — removing a
-    field crashes the bot, which scores 0).
+      network, no filesystem, no new imports.
+    - update() must stay fast (it runs inside the simulation loop):
+      no unbounded loops over entities every turn — cache in this.mem
+      and refresh at most every few turns.
+    - Do not DELETE config fields (Petra modules read them); only
+      change values.
 
     The bot is evaluated by playing full games, both positions, on
     mainland 128 with identical civilizations, against a pool of

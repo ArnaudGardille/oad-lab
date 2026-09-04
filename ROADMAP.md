@@ -283,8 +283,24 @@ interface ne produit que des logs.
       sémantique, styles étiquetés (SPEC.md §3 bis)
 - [ ] Chantier C — le PI : portefeuille d'expériences en intentions
       fantômes ; digest du matin (même agent, autre sens)
-- [ ] Chantier D — espace expressif : modules de comportement
-      évoluables (piste parallèle, prérequis de valeur)
+- [~] Chantier D — espace expressif (2026-09-04, temps 1 et 3 faits) :
+      la cible d'évolution devient `strategy.js`, une couche appelée
+      chaque tour d'IA qui peut réécrire la Config de Petra EN PLACE
+      selon l'état du jeu (Petra la relit en continu) — timings
+      conditionnels, pivots éco/militaire, réactions à l'ennemi
+      deviennent exprimables. Patch minimal de _petrabot.js
+      (try/catch : un crash de stratégie ne coûte que l'ajustement du
+      tour), stratégie nulle = vanilla. Prompt réécrit : mécanique,
+      champs Config mutables, antisèche gameState vérifiée par grep
+      contre l'usage réel du fork. Installation par détection de
+      substrat (les deux ères cohabitent : archive, HOF, branch).
+      **Incident au passage : OpenEvolve ré-importe evaluator.py à
+      CHAQUE évaluation — l'édition en cours de run a invalidé 2
+      évaluations (fenêtre 12h48-12h56, voir
+      runs/evolution/2026-09-03_2114/ANOMALIE.md).**
+      Reste le temps 2 : test de parité à la fin du run en cours
+      (candidate régénéré + stratégie nulle ≈ vanilla au harnais),
+      OBLIGATOIRE avant la nuit 3.
 - [ ] Vue DAG des lignées + carte comportementale (d3/cytoscape)
 - [ ] Verbes : épingler, couper, brancher-avec-intention, drapeau
       « explore ici » → traduits en priors de sélection

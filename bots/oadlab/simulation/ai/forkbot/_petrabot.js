@@ -1,6 +1,8 @@
 import { BaseAI } from "simulation/ai/common-api/baseAI.js";
 import { Entity } from "simulation/ai/common-api/entity.js";
+import { aiWarn } from "simulation/ai/common-api/utils.js";
 import { Config } from "simulation/ai/forkbot/config.js";
+import { Strategy } from "simulation/ai/forkbot/strategy.js";
 import { Headquarters } from "simulation/ai/forkbot/headquarters.js";
 import { Queue } from "simulation/ai/forkbot/queue.js";
 import { QueueManager } from "simulation/ai/forkbot/queueManager.js";
@@ -20,6 +22,10 @@ export function PetraBot(settings)
 	};
 
 	this.Config = new Config(settings.difficulty, settings.behavior);
+
+	// Couche stratégie évoluable (oad-lab) : peut réécrire la Config
+	// à chaque tour selon l'état du jeu. Voir strategy.js.
+	this.strategy = new Strategy(this.Config);
 
 	this.savedEvents = {};
 }
@@ -117,6 +123,21 @@ PetraBot.prototype.OnUpdate = function(sharedScript)
 		{
 			Engine.ProfileStop();
 			return;
+		}
+
+		// Un crash de la stratégie ne coûte que l'ajustement de CE
+		// tour : Petra continue en vanilla (repli sûr, oad-lab).
+		try
+		{
+			this.strategy.update(this.gameState, this.Config);
+		}
+		catch (e)
+		{
+			if (!this.strategyWarned)
+			{
+				aiWarn("oadlab strategy.update failed: " + e);
+				this.strategyWarned = true;
+			}
 		}
 
 		this.HQ.update(this.gameState, this.queues, this.savedEvents);

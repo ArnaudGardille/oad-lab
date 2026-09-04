@@ -134,11 +134,19 @@ def main():
             print(f"branch {branches[-1]['target'][:8]} : programme"
                   " introuvable, graine baseline", file=sys.stderr)
             seed_prog = None
+        elif "export function Strategy" not in seed_prog["code"]:
+            # Programme d'avant le chantier D : son code est un
+            # config.js, l'installer comme strategy.js casserait le
+            # bot. L'ancien substrat n'est pas branchable.
+            print(f"branch {seed_prog['id'][:8]} : substrat config.js"
+                  " (pré-chantier D), non branchable — graine baseline",
+                  file=sys.stderr)
+            seed_prog = None
     if seed_prog:
         (out / "initial.js").write_text(seed_prog["code"])
         seed_note = f", graine {seed_prog['id'][:8]}"
     else:
-        shutil.copyfile(REPO / "evolution/initial_config.js",
+        shutil.copyfile(REPO / "evolution/initial_strategy.js",
                         out / "initial.js")
 
     grid = cfg.get("database", {}).get("feature_bins", 8)
