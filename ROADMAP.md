@@ -156,7 +156,7 @@ Enseignement pour la phase 5 : le plateau vient du manque de diversité
 ET de la résolution de l'éval — les descripteurs comportementaux et le
 hall of fame sont la suite logique, pas un luxe.
 
-## Phase 5 — Archive qualité-diversité — EN COURS (2026-09-03)
+## Phase 5 — Archive qualité-diversité — FAIT (2026-09-04)
 
 Découverte structurante : en partie 100 % IA, commands.txt ne contient
 AUCUNE commande (les IA postent leurs ordres directement dans la
@@ -199,12 +199,23 @@ unités par classe, valeurs tuées/perdues, ressources, pop, % carte).
       à une demande d'écriture. La nuit 1 reste valide : l'évaluateur
       et le harnais n'ont pas été touchés (git status), seuls
       l'étalon et le programme initial étaient contaminés APRÈS coup.
-- [ ] Nuit de validation : vérifier que la carte comportementale se
-      remplit (occupation de la grille 8×8) et que les scores avec
-      pool HOF restent sains.
+- [x] Nuit de validation (2026-09-03_2114, 100 itérations, 4 068
+      parties, 0 crash) : la carte se remplit dans l'espace adaptatif
+      d'OpenEvolve — 16/64 cellules (25 %), 41 événements
+      cell_occupied, 3 îlots à best égal 0,625 par des programmes
+      DIFFÉRENTS. Scores sains face au pool durci Petra+HOF : médiane
+      0,521, best 0,625 (wr_hof 67 %, wr_hard 25 % — le pool durci
+      mord, plus de plafond artificiel). MAIS en coordonnées absolues
+      les 83 programmes scorés tiennent dans 5/64 cellules
+      (aggression 0,55-0,79, boom 0,20-0,30) : muter config.js ne
+      change presque pas le style de jeu. La diversité
+      comportementale réelle exige d'ouvrir l'espace de recherche
+      (modules de comportement — chantier suivant).
 
 **Sortie** : la carte comportementale se remplit ; les runs ne
-convergent plus vers un style unique.
+convergent plus vers un style unique. Atteinte dans l'espace relatif ;
+l'espace absolu est borné par config.js — c'est le constat qui motive
+la phase suivante.
 
 ## Phase 6 — Atelier visuel humain-LLM — EN COURS (2026-09-03)
 
