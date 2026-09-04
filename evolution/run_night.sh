@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Lance une nuit d'évolution, détachée de la session (setsid + nohup) :
-# le run survit à la fermeture du terminal ou de la session d'outil.
+# Lance une nuit d'évolution comme unité systemd --user : détachée de
+# la session ET unconfined. Le second point n'est pas un détail : un
+# run hérité d'une session AppArmor confinée (label claude-desktop) ne
+# peut pas signaler les processus snap — kill_game() reçoit EPERM sur
+# chaque timeout et les parties fuient à 3-10 Go pièce jusqu'à saturer
+# la RAM (nuits des 2026-09-03/04).
 #
 #   ./evolution/run_night.sh [iterations]
 #
 # Suivi : tail -f runs/evolution/<horodatage>/night.log
-# Arrêt : kill -TERM -<pgid>  (pgid affiché au lancement)
+# Arrêt : systemctl --user stop oadlab-night-<horodatage>
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -53,24 +57,37 @@ REAL_CLAUDE="$(command -v claude)"
 export REAL_CLAUDE
 export PATH="$PWD/evolution/bin:$PATH"
 
-setsid nohup .venv/bin/openevolve-run \
+# Filet de sécurité : le reaper fauche toute partie headless qui
+# dépasse largement GAME_TIMEOUT, même si kill_game échoue encore.
+systemctl --user is-active --quiet oadlab-reaper || \
+    systemd-run --user --collect --unit=oadlab-reaper \
+        "$PWD/scripts/reap_hung_games.sh"
+
+UNIT="oadlab-night-$STAMP"
+# append: n'écrase pas — repartir d'un log propre si un relancement
+# dans la même minute réutilise le même $OUT.
+: > "$OUT/night.log"
+systemd-run --user --collect --unit="$UNIT" \
+    --working-directory="$PWD" \
+    --setenv=REAL_CLAUDE="$REAL_CLAUDE" \
+    --setenv=PATH="$PWD/evolution/bin:$PATH" \
+    --property=StandardOutput="append:$PWD/$OUT/night.log" \
+    --property=StandardError="append:$PWD/$OUT/night.log" \
+    "$PWD/.venv/bin/openevolve-run" \
     "$OUT/initial.js" \
     evolution/evaluator.py \
     --config "$OUT/config.yaml" \
     --iterations "$ITER" \
-    --output "$OUT" \
-    >"$OUT/night.log" 2>&1 &
+    --output "$OUT"
 
-PID=$!
-disown
-# Un job backgroundé échappe à set -e : vérifier qu'il survit au
+# systemd-run rend la main aussitôt : vérifier que l'unité survit au
 # démarrage, sinon les intentions ont été consommées par un run mort
 # (échec bruyant plutôt que silencieux — les re-soumettre via le front).
 sleep 3
-if ! kill -0 "$PID" 2>/dev/null; then
+if ! systemctl --user is-active --quiet "$UNIT"; then
     echo "openevolve-run est mort au lancement — voir $OUT/night.log ;" >&2
     echo "les intentions consommées par ce run sont à re-soumettre." >&2
     exit 1
 fi
-echo "run lancé : $ITER itérations, pid $PID (pgid $(ps -o pgid= -p $PID | tr -d ' '))"
-echo "log : $OUT/night.log"
+echo "run lancé : $ITER itérations, unité $UNIT"
+echo "log : $OUT/night.log ; arrêt : systemctl --user stop $UNIT"

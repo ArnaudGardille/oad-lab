@@ -4,6 +4,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 
@@ -56,22 +57,57 @@ def _descendants(pid):
     return pids
 
 
+def _unconfined_kill(args):
+    """Signal délégué à systemd --user (unconfined) : quand le harnais
+    tourne sous un label AppArmor de session (p. ex. claude-desktop),
+    TOUS ses kill() vers les processus snap sont EPERM — chaque partie
+    en timeout survivait alors indéfiniment, 3-10 Go de RSS chacune,
+    jusqu'à saturer les 128 Go (nuits des 2026-09-03/04).
+
+    Un échec ici ne doit JAMAIS remonter : planter la nuit entière est
+    pire que fuir une partie — le reaper (scripts/reap_hung_games.sh)
+    finira le travail. On logge sur stderr (-> night.log)."""
+    try:
+        r = subprocess.run(["systemd-run", "--user", "--quiet",
+                            "--collect", "--wait", "/bin/kill",
+                            "-KILL", "--"] + [str(a) for a in args],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=30)
+        if r.returncode != 0:
+            print(f"  unconfined kill rc={r.returncode} pour {args} —"
+                  " parties laissées au reaper", file=sys.stderr)
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"  unconfined kill impossible ({e}) pour {args} —"
+              " parties laissées au reaper", file=sys.stderr)
+
+
 def kill_game(p):
     """Le wrapper snap rend killpg parfois EPERM, et pyrogenesis est un
     petit-fils du wrapper : on relève toute la descendance AVANT de
     tuer (après, elle est reparentée sur init et devient introuvable),
-    puis on tue groupe, parent et descendants un par un."""
+    puis on tue groupe, parent et descendants un par un. Ce qui reste
+    EPERM part en dernier recours via systemd (voir _unconfined_kill)."""
     victims = _descendants(p.pid)
-    for attempt in (lambda: os.killpg(p.pid, signal.SIGKILL), p.kill):
-        try:
-            attempt()
-        except (ProcessLookupError, PermissionError):
-            pass
+    denied = []
+    try:
+        os.killpg(p.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    except PermissionError:
+        denied.append(f"-{p.pid}")
+    try:
+        p.kill()
+    except (ProcessLookupError, PermissionError):
+        pass
     for pid in victims:
         try:
             os.kill(pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
+        except ProcessLookupError:
             pass
+        except PermissionError:
+            denied.append(pid)
+    if denied:
+        _unconfined_kill(denied)
 
 
 def run_batch(specs, parallel=None, timeout=None, stagger=None, log=print):
