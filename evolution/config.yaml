@@ -62,7 +62,24 @@ prompt:
       citizenSoldier, trader, healer, house, dropsites, field,
       economicBuilding, militaryBuilding, defenseBuilding, civilCentre,
       majorTech, minorTech, emergency
-    - config.popScaling, config.difficulty (read-only context)
+    - config.popScaling
+
+    TRAP — `config.difficulty` is YOUR OWN difficulty setting, never the
+    opponent's, and the harness always runs you at 3 (MEDIUM). It is a
+    CONSTANT. `if (config.difficulty >= 4)` is dead code that never
+    executes; `if (config.difficulty == 3)` is always true. You cannot
+    read the opponent's difficulty from anywhere — infer pressure from
+    the game state instead (how fast the enemy expands, when you are
+    first attacked, army sizes you observe). Previous runs wasted whole
+    lineages on difficulty-branching that never ran.
+
+    TRAP — `config.personality` is pinned to the "balanced" band: both
+    `personality.aggressive` and `personality.defensive` stay within
+    [0.37, 0.63]. `config.personalityCut.strong` is 0.7 and
+    `.weak` is 0.3, so `personality.aggressive > personalityCut.strong`
+    and `personality.defensive < personalityCut.weak` are ALWAYS FALSE.
+    Petra's own aggressive/defensive branches are therefore dead; if you
+    want that behavior, write the parameter values yourself.
 
     gameState API you can rely on (verified against this Petra fork):
     - gameState.getTimeElapsed() -> ms of game time
@@ -123,16 +140,29 @@ prompt:
     are preserved even at equal score, so exploring a genuinely
     different strategy is valuable, not just tuning the current one.
 
-    MANDATORY: every mutation is an experiment, not a tweak. The FIRST
-    TWO LINES of the file are comment lines, placed ABOVE the two
-    import lines (which then follow, unchanged); rewrite these two
-    comments at every mutation (replace the previous ones):
+    MANDATORY — MECHANICALLY ENFORCED: every mutation is an experiment,
+    not a tweak. The FIRST TWO LINES of the file are comment lines,
+    above everything else; rewrite these two comments at every mutation
+    (replace the previous ones, never delete them). A program that
+    reaches the evaluator without both headers is REJECTED WITHOUT
+    PLAYING A SINGLE GAME and scores 0 — in the run of 2026-09-03 the
+    first mutation deleted the header and all 60 surviving programs
+    inherited the deletion, so no verdict could ever be computed:
       // HYPOTHESIS: <one sentence: the strategic idea being tested
          and why it should work against this pool>
       // PREDICTION: <comma-separated directional claims among:
          aggression, boom, military, map_control, wr_easy, wr_medium,
          wr_hard, wr_hof, combined_score — e.g. "aggression=+, boom=-,
          wr_hard=+">
+    Aim for effects a small sample can actually see. The evaluation is
+    24-48 games (8 per opponent): its noise floor is about 0.18 on a
+    per-opponent winrate, so a change worth 2-3 points of winrate is
+    INVISIBLE here and indistinguishable from luck. Prefer one decisive
+    strategic change per mutation — a different opening, a real timing
+    push, a genuine eco/military pivot — over simultaneous micro-tuning
+    of many constants. Only programs that clear the bar get re-played
+    on 96-192 fresh, never-before-played games to confirm the score.
+
     Your prediction is checked against the measured metrics after the
     games are played; a mutation whose prediction is refuted or whose
     effect is null is treated as noise. Vague or missing headers make
@@ -159,11 +189,17 @@ database:
   migration_rate: 0.1
 
 evaluator:
-  timeout: 1800
+  # Doit couvrir le stage 3 : au pire 192 parties (pool de 6) / 12 en
+  # parallèle x 240 s de cap mural = 3840 s.
+  timeout: 5400
   max_retries: 1
   cascade_evaluation: true
-  # stage 1 (6 parties) doit dépasser ce combined_score pour accéder
-  # au stage 2 ; le baseline stage-1 tourne autour de 0.5.
-  cascade_thresholds: [0.34]
+  # [0] stage 1 (6 parties) doit dépasser ce combined_score pour
+  # accéder au stage 2 ; le baseline stage-1 tourne autour de 0.5.
+  # [1] porte du stage 3 (CONFIRMATION sur 192 parties fraîches) : au
+  # -dessus de la moyenne de population mesurée (~0,54 sur le pool à 6
+  # adversaires), donc seules les vraies prétendantes paient les 25 min.
+  # Dépend de l'échelle du pool : à revoir si le pool change.
+  cascade_thresholds: [0.34, 0.60]
   parallel_evaluations: 1
   enable_artifacts: true

@@ -16,7 +16,17 @@ d'évaluation. Le combined_score change alors d'échelle — c'est voulu
 (cible mobile, façon league play) ; les scores avec et sans hall of
 fame ne se comparent pas.
 
-Usage : scripts/make_hof.py runs/evolution/<run>/checkpoints/checkpoint_N [n]
+N'entrent au hall of fame que des programmes dont le score a été
+CONFIRMÉ (stage 3 : rejoués sur CONFIRM_SEEDS, disjoints des seeds qui
+les ont sélectionnés). Sans cela on promeut la malédiction du
+vainqueur : le score qui fait entrer un programme est le tirage même
+qui l'a fait gagner, et le hall of fame gèle du bruit en cible mobile
+— c'est ce qui s'est passé les 2026-09-02/03, où les trois hofN
+promus se sont révélés à égalité stricte (49,2 %) avec la population
+qu'ils étaient censés surpasser. `--allow-unconfirmed` rétablit
+l'ancien comportement pour les checkpoints antérieurs au stage 3.
+
+Usage : scripts/make_hof.py <checkpoint> [n] [--allow-unconfirmed]
 """
 
 import json
@@ -39,11 +49,20 @@ def _normalize(code):
     return re.sub(r"\s+", "", code)
 
 
-def pick_elites(programs, n):
-    ranked = sorted(
-        (p for p in programs
-         if (p.get("metrics") or {}).get("combined_score") is not None),
-        key=lambda p: -p["metrics"]["combined_score"])
+def pick_elites(programs, n, require_confirmed=True):
+    def eligible(p):
+        m = p.get("metrics") or {}
+        if m.get("combined_score") is None:
+            return False
+        # `confirmed_games` n'est posé que par evaluate_stage3 : sa
+        # présence atteste que le combined_score retenu vient de
+        # parties FRAÎCHES, pas du tirage qui a sélectionné le
+        # programme (les métriques du stage 3 écrasent celles du
+        # stage 2 dans la fusion OpenEvolve).
+        return not require_confirmed or m.get("confirmed_games", 0) > 0
+
+    ranked = sorted((p for p in programs if eligible(p)),
+                    key=lambda p: -p["metrics"]["combined_score"])
     seen, seen_code, elites = set(), set(), []
     for p in ranked:
         m = p["metrics"]
@@ -72,16 +91,26 @@ def pick_elites(programs, n):
 
 
 def main():
-    if len(sys.argv) not in (2, 3):
+    args = [a for a in sys.argv[1:] if a != "--allow-unconfirmed"]
+    require_confirmed = "--allow-unconfirmed" not in sys.argv
+    if len(args) not in (1, 2):
         sys.exit(__doc__)
-    ckpt = Path(sys.argv[1]).resolve()
-    n = int(sys.argv[2]) if len(sys.argv) == 3 else 3
+    ckpt = Path(args[0]).resolve()
+    n = int(args[1]) if len(args) == 2 else 3
     programs_dir = ckpt / "programs"
     if not programs_dir.is_dir():
         sys.exit(f"pas de dossier programs/ dans {ckpt}")
     programs = [json.loads(f.read_text())
                 for f in sorted(programs_dir.glob("*.json"))]
-    elites = pick_elites(programs, n)
+    elites = pick_elites(programs, n, require_confirmed)
+    if not elites and require_confirmed:
+        sys.exit(
+            "aucun programme CONFIRMÉ dans ce checkpoint : le hall of "
+            "fame ne promeut que des scores rejoués sur seeds frais "
+            "(stage 3). Aucun candidat n'a franchi cascade_thresholds[1], "
+            "ou ce checkpoint est antérieur au stage 3 — dans ce cas "
+            "--allow-unconfirmed, en sachant qu'on promeut alors un "
+            "maximum de tirages et non une force démontrée.")
     if not elites:
         sys.exit("aucun programme avec combined_score dans ce checkpoint")
 

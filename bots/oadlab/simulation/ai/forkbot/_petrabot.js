@@ -23,6 +23,23 @@ export function PetraBot(settings)
 
 	this.Config = new Config(settings.difficulty, settings.behavior);
 
+	// Banc d'essai : la personnalité est du BRUIT, pas une variable
+	// d'intérêt. 0 A.D. 0.28 n'expose pas d'option de ligne de commande
+	// pour la fixer, et le défaut de Petra (`behavior || "random"`)
+	// tire personality.aggressive uniformément sur [0, 1] à CHAQUE
+	// partie : les branches en `personality.aggressive >
+	// personalityCut.strong` (0,7) ne s'exécutaient donc que dans ~30 %
+	// des parties, au hasard — une stratégie portée par une de ces
+	// branches voyait son effet dilué d'un facteur 3, et le « bot »
+	// évalué était en fait un mélange aléatoire de personas
+	// (diagnostic 2026-09-04). On épingle ici, APRÈS le constructeur et
+	// AVANT setConfig (appelée depuis CustomInit) : la personnalité est
+	// alors tirée dans la bande étroite de "balanced" ([0,37 ; 0,63]),
+	// et la politique redevient une fonction du seul programme évolué.
+	// Valeur miroir : oadlab.config.AI_BEHAVIOR (entre dans le
+	// protocole d'éval).
+	this.Config.behavior = "balanced";
+
 	// Couche stratégie évoluable (oad-lab) : peut réécrire la Config
 	// à chaque tour selon l'état du jeu. Voir strategy.js.
 	this.strategy = new Strategy(this.Config);
