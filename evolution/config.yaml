@@ -2,7 +2,9 @@
 #
 # Budget d'une itération : génération LLM (~1-2 min) + stage 1 (6
 # parties ~1 min) + stage 2 si franchi (24 parties ~2-4 min), soit
-# ~100 itérations par nuit de 8 h.
+# ~100 itérations par nuit de 8 h. À quoi s'ajoute, pour le dernier
+# décile seulement, le stage 3 de confirmation (96 parties, ~12 min) :
+# compter une dizaine de confirmations par nuit, soit ~2 h.
 
 max_iterations: 100
 checkpoint_interval: 5
@@ -189,17 +191,23 @@ database:
   migration_rate: 0.1
 
 evaluator:
-  # Doit couvrir le stage 3 : au pire 192 parties (pool de 6) / 12 en
-  # parallèle x 240 s de cap mural = 3840 s.
+  # S'applique PAR ÉTAPE (openevolve/evaluator.py), pas au total.
+  # Dimensionné sur le stage 3 : au pire 192 parties (pool de 6) / 12
+  # en parallèle x 240 s de cap mural = 3840 s. Contrepartie assumée :
+  # un stage 1 bloqué immobilise désormais 90 min au lieu de 30.
   timeout: 5400
   max_retries: 1
   cascade_evaluation: true
   # [0] stage 1 (6 parties) doit dépasser ce combined_score pour
   # accéder au stage 2 ; le baseline stage-1 tourne autour de 0.5.
-  # [1] porte du stage 3 (CONFIRMATION sur 192 parties fraîches) : au
-  # -dessus de la moyenne de population mesurée (~0,54 sur le pool à 6
-  # adversaires), donc seules les vraies prétendantes paient les 25 min.
-  # Dépend de l'échelle du pool : à revoir si le pool change.
-  cascade_thresholds: [0.34, 0.60]
+  # [1] pré-filtre du stage 3, volontairement NON contraignant : la
+  # vraie porte est dans evaluator.py (_confirm_gate), au dernier
+  # décile de la population mesurée sous le même protocole. Un seuil
+  # absolu ne peut pas tenir ici — le combined_score change d'échelle
+  # avec le pool (médiane 0,58 contre 3 ancres, 0,52 contre 6, où le
+  # record est 0,60), donc un 0,60 câblé laissait passer ~36 % des
+  # programmes dans un cas et aucun dans l'autre. Quand la porte est
+  # fermée, le stage 3 rend la main sans jouer une seule partie.
+  cascade_thresholds: [0.34, 0.34]
   parallel_evaluations: 1
   enable_artifacts: true

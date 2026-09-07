@@ -81,6 +81,9 @@ main > section {
   padding: 8px 10px; font-size: 12.5px; margin: 8px 0;
   white-space: pre-wrap; }
 #detail .lowconf-warn { color: var(--dim); font-size: 12px; }
+/* Le score confirmé est joué sur des seeds fraîches : il doit se
+   distinguer au premier coup d'oeil d'une estimation (P3). */
+#detail .confirmed { color: var(--good); font-size: 12px; }
 #detail .verbs { display: flex; gap: 8px; margin: 10px 0; }
 #detail button {
   background: var(--panel); color: var(--fg);

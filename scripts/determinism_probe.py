@@ -141,6 +141,16 @@ def main():
     L = summarize(f"LOAD ({config.PARALLEL} en parallèle)", load)
 
     print("\n--- verdict ---")
+    # Sans replay exploitable, `distinct_turns` est None et le test
+    # ci-dessous tomberait dans la branche « PAS déterministe » : 16
+    # parties toutes plantées produiraient un verdict scientifique
+    # affirmatif. On refuse de conclure.
+    if s["distinct_turns"] is None or L["distinct_turns"] is None:
+        print("DONNÉES INSUFFISANTES : au moins un bras n'a produit aucun "
+              "replay exploitable (parties plantées ou en timeout). Rien "
+              "ne peut être conclu sur le déterminisme du moteur — "
+              "vérifier le harnais, puis relancer.")
+        return 1
     if s["distinct_turns"] == 1 and s["flip"] == 0:
         if L["flip"] > 0 or (L["distinct_turns"] or 0) > 1:
             print("Le moteur est DÉTERMINISTE à charge nulle et cesse de "
@@ -159,4 +169,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main() or 0)

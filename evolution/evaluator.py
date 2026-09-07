@@ -25,8 +25,10 @@ Cascade :
   gagner : mesuré le 2026-09-04, sous l'hypothèse « tous les
   programmes valent le baseline », le maximum attendu de 60 tirages à
   24 parties vaut 0,77 — au-dessus du meilleur score jamais observé.
-  Ses métriques ÉCRASENT celles du stage 2 dans la fusion OpenEvolve :
-  le score retenu est le score confirmé.
+  Il rend des métriques `confirmed_*` qui n'écrasent RIEN : la
+  fitness de sélection d'OpenEvolve reste le score du stage 2 (sans
+  quoi les élites confirmées se font évincer par des scores jamais
+  rejoués), et le score confirmé est ce qu'on publie.
 
 parallel_evaluations DOIT rester à 1 : l'évaluateur écrit dans le même
 dossier candidate/ et le parallélisme est déjà au niveau des parties.
@@ -64,6 +66,13 @@ CANDIDATE_STRATEGY = CANDIDATE_DIR / "strategy.js"
 CANDIDATE_CONFIG = CANDIDATE_DIR / "config.js"
 
 INSTALL_LOCK = REPO / "runs" / ".candidate_install.lock"
+
+# Cascade : le stage 2 joue 4 seeds par adversaire ; la porte du stage
+# 3 se calcule sur la population déjà mesurée sous CE protocole-là.
+STAGE2_PAIRS = 4
+CONFIRM_QUANTILE = 0.9      # on confirme le dernier décile, pas plus
+CONFIRM_MIN_PROGRAMS = 12   # en-deçà, un quantile ne veut rien dire
+CONFIRM_FLOOR = 0.5         # et jamais un programme qui perd son pool
 
 
 @contextmanager
@@ -106,8 +115,16 @@ def _tag(program_path):
     return f"cand-{hashlib.sha1(code).hexdigest()[:12]}"
 
 
-_HYPOTHESIS = re.compile(r"^//\s*HYPOTHESIS:\s*(\S.*)$", re.M | re.I)
-_PREDICTION = re.compile(r"^//\s*PREDICTION:\s*(\S.*)$", re.M | re.I)
+_HYPOTHESIS = re.compile(r"^\s*//\s*HYPOTHESIS:\s*(\S.*)$", re.M | re.I)
+_PREDICTION = re.compile(r"^\s*//\s*PREDICTION:\s*(\S.*)$", re.M | re.I)
+
+# Zone d'en-tête : le contrat doit être EN TÊTE, mais le prompt montre
+# lui-même une hypothèse qui déborde sur une ligne de continuation —
+# exiger « les deux premières lignes » au pied de la lettre rejetterait
+# des en-têtes bien formés. Dix lignes laissent la place au repli tout
+# en interdisant qu'un contrat migre en milieu de fichier au fil des
+# diffs (sans borne, un en-tête ligne 40 passait).
+_HEADER_ZONE = 10
 
 # Descripteurs d'un programme REJETÉ. Ce ne sont pas des mesures — il
 # n'a pas été joué — mais MAP-Elites exige ses feature_dimensions pour
@@ -142,16 +159,18 @@ def check_contract(code):
     n'a jamais pu être calculé. On le vérifie donc ici, avant de
     dépenser la moindre partie : le coût d'un rejet est nul et
     l'artefact renvoyé explique la faute au générateur."""
+    header = "\n".join(code.splitlines()[:_HEADER_ZONE])
     missing = []
-    if not _HYPOTHESIS.search(code):
+    if not _HYPOTHESIS.search(header):
         missing.append("// HYPOTHESIS: <l'idée stratégique testée>")
-    if not _PREDICTION.search(code):
+    if not _PREDICTION.search(header):
         missing.append("// PREDICTION: <affirmations directionnelles, "
                        'p. ex. "aggression=+, boom=-, wr_hard=+">')
     if missing:
         return ("en-tête expérimental absent — le programme n'a PAS été "
-                "évalué (aucune partie jouée). Les deux premières lignes "
-                "du fichier doivent être :\n" + "\n".join(missing))
+                f"évalué (aucune partie jouée). Dans les {_HEADER_ZONE} "
+                "premières lignes du fichier, en tête, il faut :\n"
+                + "\n".join(missing))
     return None
 
 
@@ -176,25 +195,70 @@ def evaluate_stage1(program_path):
 def evaluate_stage2(program_path):
     with _install_lock():
         _install(program_path)
-        return evalapi.evaluate_bot("candidate", pairs=4,
+        return evalapi.evaluate_bot("candidate", pairs=STAGE2_PAIRS,
                                     tag=_tag(program_path),
                                     log=lambda *a: None)
+
+
+def _confirm_gate(scores):
+    """Le score de sélection à partir duquel une confirmation vaut ses
+    96 à 192 parties : le haut de la population MESURÉE SOUS LE MÊME
+    PROTOCOLE, jamais un nombre absolu.
+
+    Un seuil absolu ne peut pas marcher, parce que le combined_score
+    change d'échelle avec le pool : mesuré le 2026-09-04 sur la base,
+    la médiane vaut 0,58 contre les 3 ancres mais 0,52 contre un pool
+    de 6, où le meilleur score jamais observé est 0,60. Le 0,60 câblé
+    en config laissait donc passer ~36 % des programmes dans un cas
+    (la nuit y passait) et aucun dans l'autre. Un quantile de la
+    population se recalibre tout seul ; le plancher évite de confirmer
+    le haut d'une population qui perd de toute façon."""
+    vals = sorted(scores.values())
+    if len(vals) < CONFIRM_MIN_PROGRAMS:
+        return CONFIRM_FLOOR
+    i = min(len(vals) - 1, round(CONFIRM_QUANTILE * (len(vals) - 1)))
+    return max(CONFIRM_FLOOR, vals[i])
 
 
 def evaluate_stage3(program_path):
     """Confirmation d'une élite sur des parties fraîches : seeds
     disjoints de ceux qui l'ont sélectionnée. Tag distinct (-s3) et
     protocole distinct (les seeds entrent dans protocol_id) — un score
-    confirmé ne se mélange jamais à un score de sélection."""
+    confirmé ne se mélange jamais à un score de sélection.
+
+    Ce que ce stage rend est PRÉFIXÉ `confirmed_*` et n'écrase donc
+    aucune métrique du stage 2. C'est délibéré : OpenEvolve se sert de
+    `combined_score` comme fitness (database._is_better →
+    get_fitness_score), pour le remplacement de cellule MAP-Elites,
+    l'élagage de population et la suppression des orphelins. Écraser
+    cette valeur par le score confirmé — plus bas, puisque la
+    régression vers la moyenne est précisément ce qu'on mesure —
+    faisait évincer les élites CONFIRMÉES par des scores de stage 2
+    jamais rejoués : l'inverse du but, et deux protocoles comparés sur
+    le même axe (P3). Le score de sélection reste donc la fitness ; le
+    score confirmé est ce qu'on PUBLIE (make_hof.py, atelier)."""
+    tag = _tag(program_path)
+    pool = evalapi.opponents()
+    selection_proto = evalapi.protocol_id(
+        pool, harness_config.EVAL_SEEDS[:STAGE2_PAIRS])
+    scores = evalapi.scores_under(selection_proto)
+    score = scores.get(tag)
+    gate = _confirm_gate(scores)
+    if score is None or score < gate:
+        # Porte fermée : aucune partie jouée, aucune métrique du stage
+        # 2 touchée. `confirmed_games = 0` dit explicitement « non
+        # confirmé » plutôt que de laisser la clé absente.
+        return {"confirmed_games": 0.0, "confirm_gate": gate}
     with _install_lock():
         _install(program_path)
-        metrics = evalapi.evaluate_bot(
-            "candidate", tag=_tag(program_path) + "-s3",
+        m = evalapi.evaluate_bot(
+            "candidate", tag=tag + "-s3",
             seeds=harness_config.CONFIRM_SEEDS, log=lambda *a: None)
-    # Marqueur de promotion : make_hof.py n'admet au hall of fame que
-    # des programmes dont le score a été confirmé sur données fraîches.
-    metrics["confirmed_games"] = float(metrics.get("games", 0.0))
-    return metrics
+    return {"confirmed_score": m["combined_score"],
+            "confirmed_games": float(m["games"]),
+            "confirmed_no_result": float(m["no_result"]),
+            "selection_score": score,
+            "confirm_gate": gate}
 
 
 def evaluate(program_path):

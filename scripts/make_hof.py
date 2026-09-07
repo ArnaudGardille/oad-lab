@@ -49,20 +49,40 @@ def _normalize(code):
     return re.sub(r"\s+", "", code)
 
 
+# Part maximale de parties sans résultat dans une confirmation. Une
+# élite dont un quart des parties fige le moteur n'est pas une élite :
+# sans ce plancher, 96 parties toutes sans résultat donneraient un
+# score de 0 assorti du label « confirmé ».
+MAX_NO_RESULT = 0.25
+
+
+def score_of(p, confirmed):
+    """Le score qui fait foi : confirmé s'il existe, sinon celui de
+    sélection. Les deux ne vivent pas sur le même axe (protocoles
+    distincts, P3) — d'où le paramètre plutôt qu'un `or`."""
+    m = p.get("metrics") or {}
+    return m.get("confirmed_score") if confirmed else m.get("combined_score")
+
+
 def pick_elites(programs, n, require_confirmed=True):
     def eligible(p):
         m = p.get("metrics") or {}
-        if m.get("combined_score") is None:
+        if score_of(p, require_confirmed) is None:
             return False
-        # `confirmed_games` n'est posé que par evaluate_stage3 : sa
-        # présence atteste que le combined_score retenu vient de
-        # parties FRAÎCHES, pas du tirage qui a sélectionné le
-        # programme (les métriques du stage 3 écrasent celles du
-        # stage 2 dans la fusion OpenEvolve).
-        return not require_confirmed or m.get("confirmed_games", 0) > 0
+        if not require_confirmed:
+            return True
+        # `confirmed_*` n'est posé que par evaluate_stage3 : sa présence
+        # atteste un score joué sur des seeds FRAÎCHES, disjointes de
+        # celles qui ont sélectionné le programme. Il ne remplace pas
+        # le combined_score (qui reste la fitness d'OpenEvolve) : c'est
+        # ici, à la promotion, qu'il fait foi.
+        games = m.get("confirmed_games", 0)
+        if games <= 0 or m["confirmed_score"] <= 0:
+            return False
+        return m.get("confirmed_no_result", 0) <= MAX_NO_RESULT * games
 
     ranked = sorted((p for p in programs if eligible(p)),
-                    key=lambda p: -p["metrics"]["combined_score"])
+                    key=lambda p: -score_of(p, require_confirmed))
     seen, seen_code, elites = set(), set(), []
     for p in ranked:
         m = p["metrics"]
@@ -107,7 +127,8 @@ def main():
         sys.exit(
             "aucun programme CONFIRMÉ dans ce checkpoint : le hall of "
             "fame ne promeut que des scores rejoués sur seeds frais "
-            "(stage 3). Aucun candidat n'a franchi cascade_thresholds[1], "
+            "(stage 3). Aucun candidat n'a franchi la porte de confirmation "
+            "(evaluator._confirm_gate), "
             "ou ce checkpoint est antérieur au stage 3 — dans ce cas "
             "--allow-unconfirmed, en sachant qu'on promeut alors un "
             "maximum de tirages et non une force démontrée.")
@@ -122,7 +143,7 @@ def main():
     try:
         for i, p in enumerate(elites, 1):
             name = f"hof{i}"
-            score = p["metrics"]["combined_score"]
+            score = score_of(p, require_confirmed)
             stage = AI_DIR / f".stage-{name}"
             make_bot(name, f"Hall of fame oad-lab #{i} — programme "
                      f"{p['id'][:8]} (score {score:.3f}).", dest=stage)
@@ -136,6 +157,10 @@ def main():
             staged.append((stage, AI_DIR / name))
             manifest.append({"bot": name, "program_id": p["id"],
                              "combined_score": score,
+                             "confirmed": bool(require_confirmed),
+                             "confirmed_games":
+                                 (p.get("metrics") or {}).get(
+                                     "confirmed_games"),
                              "aggression": p["metrics"].get("aggression"),
                              "boom": p["metrics"].get("boom"),
                              "checkpoint": str(ckpt.relative_to(REPO)

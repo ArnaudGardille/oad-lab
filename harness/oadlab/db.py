@@ -140,6 +140,12 @@ _MIGRATIONS = {
         ("games", "REAL"),     # nb de parties de l'éval → confiance (P3)
         ("code_sha", "TEXT"),  # sha1[:12] du code = lien vers matches
                                # (candidate = "cand-<sha>")
+        # Score de CONFIRMATION (stage 3) : rejoué sur des seeds
+        # disjoints de ceux qui ont sélectionné le programme, donc sous
+        # un autre protocole que `combined_score` — colonnes séparées,
+        # jamais le même axe (P3).
+        ("confirmed_score", "REAL"),
+        ("confirmed_games", "REAL"),
         ("hypothesis", "TEXT"),   # l'hypothèse stratégique déclarée
         ("prediction", "TEXT"),   # l'effet prédit sur les descripteurs
         ("verdict", "TEXT"),      # confrontation prédiction/mesure
@@ -257,9 +263,9 @@ def upsert_program(con, *, id, run, parent_id, generation, iteration, ts,
     con.execute(
         "INSERT INTO programs(id, run, parent_id, generation,"
         " iteration, ts, combined_score, wr_easy, wr_medium, wr_hard,"
-        " aggression, boom, games, changes, code, code_sha, hypothesis,"
-        " prediction, verdict)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        " aggression, boom, games, confirmed_score, confirmed_games,"
+        " changes, code, code_sha, hypothesis, prediction, verdict)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         " ON CONFLICT(id) DO UPDATE SET"
         " run=excluded.run, parent_id=excluded.parent_id,"
         " generation=excluded.generation, iteration=excluded.iteration,"
@@ -267,6 +273,13 @@ def upsert_program(con, *, id, run, parent_id, generation, iteration, ts,
         " wr_easy=excluded.wr_easy, wr_medium=excluded.wr_medium,"
         " wr_hard=excluded.wr_hard, aggression=excluded.aggression,"
         " boom=excluded.boom, games=excluded.games,"
+        # Un score confirmé coûte 96 à 192 parties : il ne régresse
+        # jamais à NULL parce qu'un checkpoint plus récent a perdu la
+        # métrique.
+        " confirmed_score=COALESCE(excluded.confirmed_score,"
+        " programs.confirmed_score),"
+        " confirmed_games=COALESCE(excluded.confirmed_games,"
+        " programs.confirmed_games),"
         " changes=excluded.changes, code=excluded.code,"
         " code_sha=excluded.code_sha, hypothesis=excluded.hypothesis,"
         " prediction=excluded.prediction,"
@@ -274,7 +287,8 @@ def upsert_program(con, *, id, run, parent_id, generation, iteration, ts,
         (id, run, parent_id, generation, iteration, ts,
          m.get("combined_score"), m.get("wr_easy"), m.get("wr_medium"),
          m.get("wr_hard"), m.get("aggression"), m.get("boom"),
-         m.get("games"), changes, code, code_sha, hypothesis,
+         m.get("games"), m.get("confirmed_score"),
+         m.get("confirmed_games"), changes, code, code_sha, hypothesis,
          prediction, verdict))
     con.commit()
 
