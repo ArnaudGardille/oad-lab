@@ -294,7 +294,7 @@ interface ne produit que des logs.
       sémantique, styles étiquetés (SPEC.md §3 bis)
 - [ ] Chantier C — le PI : portefeuille d'expériences en intentions
       fantômes ; digest du matin (même agent, autre sens)
-- [~] Chantier D — espace expressif (2026-09-04, temps 1 et 3 faits) :
+- [x] Chantier D — espace expressif (2026-09-04, complété 2026-09-07) :
       la cible d'évolution devient `strategy.js`, une couche appelée
       chaque tour d'IA qui peut réécrire la Config de Petra EN PLACE
       selon l'état du jeu (Petra la relit en continu) — timings
@@ -309,9 +309,17 @@ interface ne produit que des logs.
       CHAQUE évaluation — l'édition en cours de run a invalidé 2
       évaluations (fenêtre 12h48-12h56, voir
       runs/evolution/2026-09-03_2114/ANOMALIE.md).**
-      Reste le temps 2 : test de parité à la fin du run en cours
-      (candidate régénéré + stratégie nulle ≈ vanilla au harnais),
-      OBLIGATOIRE avant la nuit 3.
+      Temps 2 — test de parité (2026-09-07, `scripts/parity_check.py`) :
+      deux bots identiques à un octet près (`parityhook`/`paritynohook`,
+      seul le bloc try/`strategy.update` diffère) s'affrontent en
+      miroir, plus un bras contrôle (`paritynohook` contre lui-même)
+      pour calibrer le bruit de fond. Résultat sur 32 parties : hook
+      8/24 (33%) IC95 [18-53%], contrôle 2/7 (29%) IC95 [8-64%] — les
+      deux bras se recouvrent, aucun écart détecté. Pas une preuve
+      d'équivalence stricte (le contrôle n'a que 7 décisions, IC très
+      large) mais rien qui justifie de retarder la nuit 3 ; à rejouer
+      avec un plus grand échantillon si un futur écart de score entre
+      candidate et forkbot reste inexpliqué.
 - [ ] Vue DAG des lignées + carte comportementale (d3/cytoscape)
 - [ ] Verbes : épingler, couper, brancher-avec-intention, drapeau
       « explore ici » → traduits en priors de sélection
