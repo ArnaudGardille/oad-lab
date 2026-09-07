@@ -100,6 +100,11 @@ def run_arm(con, tag, reps, parallel, proto, log):
     return rows
 
 
+# Part minimale de parties exploitables pour qu'un bras ait valeur de
+# preuve. En dessous, la sonde se tait plutôt que de conclure.
+MIN_USABLE = 0.75
+
+
 def summarize(name, rows):
     outcomes = Counter(r["won"] for r in rows)
     turns = [r["turns"] for r in rows if r["turns"]]
@@ -117,7 +122,12 @@ def summarize(name, rows):
     print(f"  mur moyen     : {statistics.mean(r['wall_s'] for r in rows):.0f} s"
           f"  timeouts : {sum(r['timed_out'] for r in rows)}")
     return {"flip": flip, "distinct_turns": len(set(turns)) if turns else None,
-            "n": n}
+            # Parties exploitables : celles qui ont produit un replay
+            # lisible. Une issue None (timeout, moteur planté) compte
+            # dans `outcomes` et gonfle donc `flip` — sans ce compte,
+            # sept parties plantées sur huit passaient pour la preuve
+            # d'un moteur non déterministe.
+            "usable": len(turns), "n": n}
 
 
 def main():
@@ -141,15 +151,17 @@ def main():
     L = summarize(f"LOAD ({config.PARALLEL} en parallèle)", load)
 
     print("\n--- verdict ---")
-    # Sans replay exploitable, `distinct_turns` est None et le test
-    # ci-dessous tomberait dans la branche « PAS déterministe » : 16
-    # parties toutes plantées produiraient un verdict scientifique
-    # affirmatif. On refuse de conclure.
-    if s["distinct_turns"] is None or L["distinct_turns"] is None:
-        print("DONNÉES INSUFFISANTES : au moins un bras n'a produit aucun "
-              "replay exploitable (parties plantées ou en timeout). Rien "
-              "ne peut être conclu sur le déterminisme du moteur — "
-              "vérifier le harnais, puis relancer.")
+    # Un bras dont les parties plantent ne dit rien du déterminisme :
+    # les issues None comptent comme une issue distincte et feraient
+    # conclure « PAS déterministe » à partir d'une seule partie
+    # réellement jouée. On exige une majorité de parties exploitables
+    # dans les DEUX bras avant de conclure quoi que ce soit.
+    usable = min(s["usable"] / s["n"], L["usable"] / L["n"])
+    if usable < MIN_USABLE:
+        print(f"DONNÉES INSUFFISANTES : seulement {usable:.0%} de parties "
+              f"exploitables dans le bras le plus abîmé (minimum "
+              f"{MIN_USABLE:.0%}). Rien ne peut être conclu sur le "
+              "déterminisme — vérifier le harnais, puis relancer.")
         return 1
     if s["distinct_turns"] == 1 and s["flip"] == 0:
         if L["flip"] > 0 or (L["distinct_turns"] or 0) > 1:

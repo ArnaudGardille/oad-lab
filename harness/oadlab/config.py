@@ -41,8 +41,13 @@ CONFIRM_SEEDS = list(range(201, 217))   # 16 seeds x 2 positions x
 ANCHORS = [("petra", 2), ("petra", 3), ("petra", 4)]
 CANDIDATE_DIFF = 3
 
-# Personnalité des bots du mod (candidate, forkbot, hofN) — épinglée
-# dans _petrabot.js, PAS via la ligne de commande : 0 A.D. 0.28 n'a pas
+# Personnalité des bots du mod — épinglée dans le _petrabot.js de
+# forkbot, d'où elle se propage à tout bot généré par make_bot
+# (candidate, hofN, snapshots). Les bots MATÉRIALISÉS avant cet
+# épinglage ne l'ont pas : evalapi.opponents() refuse un bot du
+# pool dont le _petrabot.js ne le porte pas, sans quoi le
+# protocol_id enregistré affirmerait une personnalité fixe pour
+# un adversaire qui la tire au hasard. Pas via la ligne de commande : 0 A.D. 0.28 n'a pas
 # d'option --autostart-aibehavior (seuls -ai, -aidiff, -aiseed
 # existent), et le défaut de Petra est `behavior || "random"`, soit
 # personality.aggressive tiré uniformément sur [0, 1] à chaque partie.

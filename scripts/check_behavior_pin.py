@@ -12,10 +12,13 @@ injecte notre propre trace juste après le tirage, on joue une partie et
 on lit la valeur dans le journal du moteur (aiWarn n'atteint pas la
 sortie standard).
 
-Attendu avec AI_BEHAVIOR = "balanced" : aggressive et defensive dans
-[0.37, 0.63], donc TOUJOURS sous personalityCut.strong (0.7) et
-au-dessus de personalityCut.weak (0.3) — les branches discontinues de
-Petra sont inatteignables et la politique ne dépend plus du tirage.
+Attendu : les deux tirages tombent dans la bande de AI_BEHAVIOR,
+LUE dans le personalityList du bot (band()) et non recopiée ici — un
+vérificateur qui code en dur ce qu'il vérifie ne vérifie rien. Pour
+"balanced" cette bande vaut aujourd'hui [0.37, 0.63], donc toujours
+sous personalityCut.strong (0.7) et au-dessus de personalityCut.weak
+(0.3) : les branches discontinues de Petra sont inatteignables et la
+politique ne dépend plus du tirage.
 
 Usage : scripts/check_behavior_pin.py [nb_parties]   (défaut : 3)
 """
@@ -130,6 +133,11 @@ def main():
     if not pinned:
         sys.exit("forkbot n'porte pas l'épinglage — rien à vérifier")
 
+    # Lue AVANT la boucle : le `finally` détruit probebot/, et band()
+    # lit son config.js — la lire après rendait le script incapable
+    # d'imprimer son verdict, après avoir joué toutes les parties.
+    lo, hi = band(config.AI_BEHAVIOR)
+
     try:
         seen = []
         for i in range(games):
@@ -152,7 +160,6 @@ def main():
 
     agg = [v["aggressive"] for v in seen]
     dfs = [v["defensive"] for v in seen]
-    lo, hi = band(config.AI_BEHAVIOR)
     # defensive = 1 - max + d x (max - min) : même largeur, autre bord.
     dlo, dhi = 1 - hi, 1 - lo
     ok = all(lo - 1e-6 <= a <= hi + 1e-6 for a in agg) and \
@@ -163,6 +170,7 @@ def main():
     print(f"  bandes {config.AI_BEHAVIOR!r} attendues : aggressive "
           f"[{lo}, {hi}], defensive [{dlo:.2f}, {dhi:.2f}]")
     print(f"  jamais > personalityCut.strong (0.7) : {max(agg) <= 0.7}")
+    print(f"  jamais < personalityCut.weak (0.3)   : {min(dfs) >= 0.3}")
     print("\nVERDICT :", "épinglage EFFECTIF — les branches discontinues "
           "de Petra sont inatteignables, la politique ne dépend plus du "
           "tirage." if ok else

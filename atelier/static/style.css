@@ -84,6 +84,7 @@ main > section {
 /* Le score confirmé est joué sur des seeds fraîches : il doit se
    distinguer au premier coup d'oeil d'une estimation (P3). */
 #detail .confirmed { color: var(--good); font-size: 12px; }
+#match-list .stage { color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 #detail .verbs { display: flex; gap: 8px; margin: 10px 0; }
 #detail button {
   background: var(--panel); color: var(--fg);
