@@ -34,7 +34,12 @@ REFRESH_S = 30
 
 PROGRAM_COLS = ("id, run, parent_id, generation, iteration, ts,"
                 " combined_score, wr_easy, wr_medium, wr_hard,"
-                " aggression, boom, games, changes, code_sha,"
+                " aggression, boom, games,"
+                # Le score confirmé vit sur un autre protocole que
+                # combined_score : le front doit pouvoir distinguer un
+                # candidat estimé sur 24 parties d'un champion rejoué
+                # sur 96 (P3), donc il reçoit les deux séparément.
+                " confirmed_score, confirmed_games, changes, code_sha,"
                 " hypothesis, prediction, verdict,"
                 " length(code) AS code_len")
 
@@ -175,9 +180,15 @@ class Handler(BaseHTTPRequestHandler):
             return []
         sha = p[0]["code_sha"]
         if sha:
+            # Les trois étages de la cascade portent le même hash de
+            # code : -s1 la sonde, le tag nu la sélection, -s3 la
+            # confirmation. Omettre -s3 cachait justement les parties
+            # qui fondent le score défendable — or c'est ce que
+            # l'atelier doit montrer (P3 : 24 parties et 200 parties ne
+            # doivent jamais se ressembler à l'écran).
             got = rows(con, f"SELECT {self.MATCH_COLS} FROM matches"
-                       " WHERE candidate IN (?, ?) ORDER BY ts",
-                       (f"cand-{sha}", f"cand-{sha}-s1"))
+                       " WHERE candidate IN (?, ?, ?) ORDER BY ts",
+                       (f"cand-{sha}", f"cand-{sha}-s1", f"cand-{sha}-s3"))
             if got:
                 return got
         ev = rows(con, "SELECT ts FROM events WHERE run = ? AND"

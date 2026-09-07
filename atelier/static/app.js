@@ -235,6 +235,9 @@ async function selectProgram(id) {
       ${(p.combined_score ?? 0).toFixed(3)}</div>
     ${lowconf ? `<div class="lowconf-warn">⚠ estimé sur ${p.games ?? "?"}
       parties — faible confiance</div>` : ""}
+    ${p.confirmed_score != null ? `<div class="confirmed">✔ confirmé
+      ${p.confirmed_score.toFixed(3)} sur ${p.confirmed_games ?? "?"}
+      parties fraîches</div>` : ""}
     ${p.hypothesis ? `<div class="hyp">💡 ${esc(p.hypothesis)}</div>` : ""}
     ${p.prediction ? `<div class="dim">prédit : ${esc(p.prediction)}</div>` : ""}
     ${p.verdict ? `<div class="verdict ${verdictCls}">verdict :
