@@ -21,10 +21,6 @@ CREATE TABLE IF NOT EXISTS matches(
     replay TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_matches_candidate ON matches(candidate);
--- scores_under() (evalapi.py) filtre par protocole à chaque porte du
--- stage 3 : sans index, ce scan redevient plus lourd chaque nuit,
--- matches ne rétrécissant jamais (P2, faits immuables).
-CREATE INDEX IF NOT EXISTS idx_matches_protocol ON matches(protocol);
 
 -- Un lancement (nuit d'évolution, campagne d'éval) avec sa
 -- provenance. Importé par scripts/import_run.py (SPEC.md §2).
@@ -187,6 +183,16 @@ def connect():
                 # planter le prochain INSERT avec un "no such column".
                 if "duplicate column" not in str(e):
                     raise
+    # Index sur les colonnes de migration : ils ne peuvent pas vivre
+    # dans SCHEMA, qui s'exécute AVANT les ALTER — sur une base neuve,
+    # `CREATE INDEX ... ON matches(protocol)` échoue en « no such
+    # column », l'exception remonte de connect() et tout le harnais
+    # meurt sur un checkout propre.
+    # scores_under() (evalapi.py) filtre par protocole à chaque porte du
+    # stage 3 : sans cet index, le scan s'alourdit chaque nuit, matches
+    # ne rétrécissant jamais (P2, faits immuables).
+    con.execute("CREATE INDEX IF NOT EXISTS idx_matches_protocol"
+                " ON matches(protocol)")
     _schema_ready = True
     return con
 

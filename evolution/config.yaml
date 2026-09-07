@@ -2,9 +2,12 @@
 #
 # Budget d'une itération : génération LLM (~1-2 min) + stage 1 (6
 # parties ~1 min) + stage 2 si franchi (24 parties ~2-4 min), soit
-# ~100 itérations par nuit de 8 h. À quoi s'ajoute, pour le dernier
-# décile seulement, le stage 3 de confirmation (96 parties, ~12 min) :
-# compter une dizaine de confirmations par nuit, soit ~2 h.
+# ~100 itérations par nuit de 8 h. À quoi s'ajoute le stage 3 de
+# confirmation, réservé au dernier décile de la population (96 parties
+# et ~12 min contre les 3 ancres, 192 et ~25 min contre un pool de 6).
+# La porte étant un RANG et non un seuil, le coût est borné par
+# construction : rejouée sur l'historique du dépôt, elle donne ~5
+# confirmations pour 100 itérations, soit ~1 h.
 
 max_iterations: 100
 checkpoint_interval: 5
@@ -143,9 +146,11 @@ prompt:
     different strategy is valuable, not just tuning the current one.
 
     MANDATORY — MECHANICALLY ENFORCED: every mutation is an experiment,
-    not a tweak. The FIRST TWO LINES of the file are comment lines,
-    above everything else; rewrite these two comments at every mutation
-    (replace the previous ones, never delete them). A program that
+    not a tweak. The file OPENS with these two comments, above
+    everything else (they may wrap onto continuation lines, but they
+    must stay within the first 10 lines — that is what the evaluator
+    checks); rewrite them at every mutation (replace the previous ones,
+    never delete them). A program that
     reaches the evaluator without both headers is REJECTED WITHOUT
     PLAYING A SINGLE GAME and scores 0 — in the run of 2026-09-03 the
     first mutation deleted the header and all 60 surviving programs

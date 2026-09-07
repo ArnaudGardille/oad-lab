@@ -200,24 +200,39 @@ def evaluate_stage2(program_path):
                                     log=lambda *a: None)
 
 
-def _confirm_gate(scores):
-    """Le score de sélection à partir duquel une confirmation vaut ses
-    96 à 192 parties : le haut de la population MESURÉE SOUS LE MÊME
-    PROTOCOLE, jamais un nombre absolu.
+def _confirm_place(scores, tag):
+    """Le programme `tag` mérite-t-il ses 96 à 192 parties ? Rend
+    (nombre de programmes au moins aussi bons, quota) si oui, None
+    sinon.
 
-    Un seuil absolu ne peut pas marcher, parce que le combined_score
-    change d'échelle avec le pool : mesuré le 2026-09-04 sur la base,
-    la médiane vaut 0,58 contre les 3 ancres mais 0,52 contre un pool
-    de 6, où le meilleur score jamais observé est 0,60. Le 0,60 câblé
-    en config laissait donc passer ~36 % des programmes dans un cas
-    (la nuit y passait) et aucun dans l'autre. Un quantile de la
-    population se recalibre tout seul ; le plancher évite de confirmer
-    le haut d'une population qui perd de toute façon."""
-    vals = sorted(scores.values())
-    if len(vals) < CONFIRM_MIN_PROGRAMS:
-        return CONFIRM_FLOOR
-    i = min(len(vals) - 1, round(CONFIRM_QUANTILE * (len(vals) - 1)))
-    return max(CONFIRM_FLOOR, vals[i])
+    On raisonne en RANG, pas en valeur seuil. Trois pièges, tous
+    mesurés sur la base du dépôt :
+
+    - le combined_score change d'échelle avec le pool (médiane 0,58
+      contre 3 ancres, 0,52 contre 6 où le record est 0,60), donc un
+      seuil câblé confirme ~36 % des programmes ici et aucun là ;
+    - à 24 parties la granularité du score est 1/24 : les ex aequo au
+      décile sont la règle, et un seuil de valeur les laisse TOUS
+      passer — population plate, tout le monde est confirmé. On compte
+      donc les programmes au moins aussi bons (le candidat exclu) et on
+      exige qu'ils tiennent dans le quota ;
+    - tant que la population est trop maigre il n'y a pas de décile :
+      la porte reste FERMÉE plutôt que de retomber sur un absolu — un
+      repli à 0,5 laissait passer 89 % des programmes du pool à 3
+      ancres, soit une dizaine de confirmations gaspillées à chaque
+      changement de protocole (et le protocole change dès qu'on touche
+      au pool, aux seeds ou au moteur).
+
+    CONFIRM_FLOOR reste, lui, un nombre absolu assumé : il ne calibre
+    rien, il refuse seulement de payer une confirmation à un programme
+    qui perd contre son propre pool."""
+    score = scores.get(tag)
+    n = len(scores)
+    if score is None or n < CONFIRM_MIN_PROGRAMS or score < CONFIRM_FLOOR:
+        return None
+    rivals = sum(1 for cand, v in scores.items() if cand != tag and v >= score)
+    quota = max(1, round((1 - CONFIRM_QUANTILE) * n))
+    return (rivals, quota) if rivals < quota else None
 
 
 def evaluate_stage3(program_path):
@@ -242,13 +257,16 @@ def evaluate_stage3(program_path):
     selection_proto = evalapi.protocol_id(
         pool, harness_config.EVAL_SEEDS[:STAGE2_PAIRS])
     scores = evalapi.scores_under(selection_proto)
-    score = scores.get(tag)
-    gate = _confirm_gate(scores)
-    if score is None or score < gate:
-        # Porte fermée : aucune partie jouée, aucune métrique du stage
-        # 2 touchée. `confirmed_games = 0` dit explicitement « non
-        # confirmé » plutôt que de laisser la clé absente.
-        return {"confirmed_games": 0.0, "confirm_gate": gate}
+    place = _confirm_place(scores, tag)
+    if place is None:
+        # Porte fermée : aucune partie jouée, et AUCUNE métrique rendue.
+        # Rendre un `confirmed_games: 0.0` serait pire que rien : le
+        # prompt d'OpenEvolve transforme toute métrique <= 0,3 d'un
+        # programme d'inspiration en « consider an alternative approach
+        # to confirmed_games » (prompt/sampler.py), soit un conseil
+        # absurde injecté dans presque chaque génération.
+        return {}
+    rivals, quota = place
     with _install_lock():
         _install(program_path)
         m = evalapi.evaluate_bot(
@@ -257,8 +275,13 @@ def evaluate_stage3(program_path):
     return {"confirmed_score": m["combined_score"],
             "confirmed_games": float(m["games"]),
             "confirmed_no_result": float(m["no_result"]),
-            "selection_score": score,
-            "confirm_gate": gate}
+            # Le score qui a ouvert la porte : agrégé sur TOUTES les
+            # parties de ce code sous le protocole de sélection, donc
+            # pas forcément égal au combined_score du dernier batch
+            # (un code réévalué est moyenné sur ses batchs).
+            "pooled_selection_score": scores[tag],
+            "confirm_rivals": float(rivals),
+            "confirm_quota": float(quota)}
 
 
 def evaluate(program_path):

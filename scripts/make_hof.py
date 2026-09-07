@@ -50,9 +50,10 @@ def _normalize(code):
 
 
 # Part maximale de parties sans résultat dans une confirmation. Une
-# élite dont un quart des parties fige le moteur n'est pas une élite :
-# sans ce plancher, 96 parties toutes sans résultat donneraient un
-# score de 0 assorti du label « confirmé ».
+# élite dont un quart des parties fige le moteur n'en est pas une. Le
+# cas extrême (toutes les parties sans résultat) est déjà écarté par
+# le score nul ; ce plancher vise le cas intermédiaire, un score
+# honorable payé par des parties que le moteur n'a jamais finies.
 MAX_NO_RESULT = 0.25
 
 
@@ -71,9 +72,10 @@ def pick_elites(programs, n, require_confirmed=True):
             return False
         if not require_confirmed:
             return True
-        # `confirmed_*` n'est posé que par evaluate_stage3 : sa présence
-        # atteste un score joué sur des seeds FRAÎCHES, disjointes de
-        # celles qui ont sélectionné le programme. Il ne remplace pas
+        # `confirmed_score` n'existe que si le stage 3 a joué : porte
+        # fermée, evaluate_stage3 ne rend aucune métrique. Sa présence
+        # atteste donc un score joué sur des seeds FRAÎCHES, disjointes
+        # de celles qui ont sélectionné le programme. Il ne remplace pas
         # le combined_score (qui reste la fitness d'OpenEvolve) : c'est
         # ici, à la promotion, qu'il fait foi.
         games = m.get("confirmed_games", 0)
@@ -156,7 +158,12 @@ def main():
             (stage / target).write_text(code)
             staged.append((stage, AI_DIR / name))
             manifest.append({"bot": name, "program_id": p["id"],
-                             "combined_score": score,
+                             # `score` et non `combined_score` : quand
+                             # il est confirmé il vient d'un AUTRE
+                             # protocole (seeds de confirmation), et
+                             # deux protocoles ne portent pas le même
+                             # nom de champ (P3).
+                             "score": score,
                              "confirmed": bool(require_confirmed),
                              "confirmed_games":
                                  (p.get("metrics") or {}).get(

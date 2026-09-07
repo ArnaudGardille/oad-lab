@@ -287,11 +287,19 @@ async function loadMatches(programId) {
     ul.innerHTML = `<li class="dim">aucun match relié</li>`;
     return;
   }
+  const stageOf = (cand) =>
+    (cand ?? "").endsWith("-s1") ? "sonde" :
+    (cand ?? "").endsWith("-s3") ? "confirmation" : "sélection";
   ul.innerHTML = matches.map((m, i) => {
     const res = m.cand_won == null ? "∅" : m.cand_won ? "V" : "D";
     const cls = m.cand_won == null ? "dim" : m.cand_won ? "w" : "l";
     const min = m.game_s ? Math.round(m.game_s / 60) + " min" : "—";
+    // Les trois étages de la cascade portent le même hash de code mais
+    // PAS le même protocole : la sonde (-s1) et la confirmation (-s3)
+    // ne se comparent ni entre elles ni à la sélection (P3). Les
+    // mélanger sans les nommer donnerait une liste plate trompeuse.
     return `<li data-i="${i}"><span class="${cls}">${res}</span>
+      <span class="stage">${esc(stageOf(m.candidate))}</span>
       vs ${esc(m.opponent)} d${m.opp_diff}
       <span class="dim">pos ${m.cand_pos} · seed ${m.seed} · ${min}</span></li>`;
   }).join("");
