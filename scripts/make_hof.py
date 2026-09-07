@@ -77,7 +77,7 @@ def pick_elites(programs, n, require_confirmed=True):
         # le combined_score (qui reste la fitness d'OpenEvolve) : c'est
         # ici, à la promotion, qu'il fait foi.
         games = m.get("confirmed_games", 0)
-        if games <= 0 or m["confirmed_score"] <= 0:
+        if games <= 0 or m.get("confirmed_score", 0) <= 0:
             return False
         return m.get("confirmed_no_result", 0) <= MAX_NO_RESULT * games
 

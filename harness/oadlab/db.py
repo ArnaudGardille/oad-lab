@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS matches(
     replay TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_matches_candidate ON matches(candidate);
+-- scores_under() (evalapi.py) filtre par protocole à chaque porte du
+-- stage 3 : sans index, ce scan redevient plus lourd chaque nuit,
+-- matches ne rétrécissant jamais (P2, faits immuables).
+CREATE INDEX IF NOT EXISTS idx_matches_protocol ON matches(protocol);
 
 -- Un lancement (nuit d'évolution, campagne d'éval) avec sa
 -- provenance. Importé par scripts/import_run.py (SPEC.md §2).

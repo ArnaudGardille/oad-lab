@@ -262,4 +262,13 @@ def evaluate_stage3(program_path):
 
 
 def evaluate(program_path):
+    """Repli non-cascade : n'existe QUE pour un appelant qui n'a pas
+    cascade_evaluation=true (config.yaml l'a — ce chemin est dormant en
+    usage normal). evaluate_stage1 est le seul autre point d'entrée
+    protégé par check_contract ; sans le rappeler ici, un appel direct
+    à evaluate() jouerait des parties pour un programme sans en-tête,
+    contredisant la garantie documentée en tête de ce module."""
+    reason = check_contract(Path(program_path).read_text(errors="replace"))
+    if reason:
+        return _reject(reason)
     return evaluate_stage2(program_path)
